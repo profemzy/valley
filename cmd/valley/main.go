@@ -20,7 +20,7 @@ func main() {
 	var format string
 	var timeout time.Duration
 
-	flag.StringVar(&namespace, "namespace", "oluto", "Kubernetes namespace to query")
+	flag.StringVar(&namespace, "namespace", "default", "Kubernetes namespace to query")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&format, "format", "text", "Output format (text, json)")
 	flag.DurationVar(&timeout, "timeout", 15*time.Second, "Timeout for API requests")
