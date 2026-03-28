@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
 	"valley/internal/app"
 	"valley/internal/kube"
 	"valley/internal/output"
@@ -20,7 +22,7 @@ func main() {
 	var format string
 	var timeout time.Duration
 
-	flag.StringVar(&namespace, "namespace", "default", "Kubernetes namespace to query")
+	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace to query (defaults to the current kubeconfig namespace or \"default\")")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&format, "format", "text", "Output format (text, json)")
 	flag.DurationVar(&timeout, "timeout", 15*time.Second, "Timeout for API requests")
@@ -29,9 +31,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	clientset, err := kube.NewClientset(kubeconfig)
+	clientset, defaultNamespace, err := kube.NewClientset(kubeconfig)
 	if err != nil {
 		exitErr(fmt.Errorf("failed to create clientset: %w", err))
+	}
+
+	if namespace == "" {
+		namespace = defaultNamespace
 	}
 
 	pods, err := app.ListPods(ctx, clientset, app.ListPodsOptions{Namespace: namespace})

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -33,5 +34,13 @@ func ListPods(ctx context.Context, client kubernetes.Interface, opts ListPodsOpt
 			IP:        pod.Status.PodIP,
 		})
 	}
+
+	sort.Slice(pods, func(i, j int) bool {
+		if pods[i].Namespace != pods[j].Namespace {
+			return pods[i].Namespace < pods[j].Namespace
+		}
+		return pods[i].Name < pods[j].Name
+	})
+
 	return pods, nil
 }

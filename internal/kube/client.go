@@ -2,41 +2,40 @@ package kube
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func NewClientset(kubeconfigPath string) (*kubernetes.Clientset, error) {
-	path, err := resolveKubeconfig(kubeconfigPath)
+func NewClientset(kubeconfigPath string) (*kubernetes.Clientset, string, error) {
+	clientConfig := newClientConfig(kubeconfigPath)
+
+	config, err := clientConfig.ClientConfig()
 	if err != nil {
-		return nil, err
+		return nil, "", fmt.Errorf("failed to build kubeconfig: %w", err)
 	}
 
-	config, err := clientcmd.BuildConfigFromFlags("", path)
+	namespace, _, err := clientConfig.Namespace()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
+		return nil, "", fmt.Errorf("failed to resolve namespace: %w", err)
+	}
+	if namespace == "" {
+		namespace = "default"
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create clientset: %w", err)
+		return nil, "", fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	return clientset, nil
+	return clientset, namespace, nil
 }
 
-func resolveKubeconfig(explicitPath string) (string, error) {
-	if explicitPath != "" {
-		return explicitPath, nil
+func newClientConfig(kubeconfigPath string) clientcmd.ClientConfig {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfigPath != "" {
+		loadingRules.ExplicitPath = kubeconfigPath
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve home directory: %w", err)
-	}
-
-	return filepath.Join(home, ".kube", "config"), nil
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
 }

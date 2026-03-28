@@ -7,7 +7,9 @@ A lightweight command-line tool for listing Kubernetes pods in a specified names
 - List pods in any Kubernetes namespace
 - Multiple output formats (text, JSON)
 - Configurable timeout for API requests
+- Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
 - Support for custom kubeconfig paths
+- Supports both exec-based auth flows and legacy auth-provider kubeconfigs
 - Works with any Kubernetes cluster (local, cloud-managed, on-premises)
 
 ## Requirements
@@ -42,19 +44,19 @@ go run ./cmd/valley -namespace <your-namespace>
 ### Basic Usage
 
 ```bash
-# List pods in the default namespace
+# List pods in the current kubeconfig namespace (or "default" if unset)
 ./valley
 
 # List pods in a specific namespace
-./valley -namespace oluto
+./valley -namespace kube-system
 ```
 
 ### Command-Line Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-namespace` | Kubernetes namespace to query | `oluto` |
-| `-kubeconfig` | Path to kubeconfig file | `~/.kube/config` |
+| `-namespace` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
+| `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
 | `-format` | Output format (`text` or `json`) | `text` |
 | `-timeout` | Timeout for API requests | `15s` |
 
@@ -104,6 +106,12 @@ Pods: 5
 
 ```bash
 ./valley -kubeconfig /path/to/custom/kubeconfig -namespace production
+```
+
+#### Use standard kubeconfig loading
+
+```bash
+KUBECONFIG=~/.kube/config:~/.kube/staging ./valley
 ```
 
 #### Set a custom timeout
