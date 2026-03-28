@@ -9,6 +9,7 @@ A lightweight command-line tool for listing Kubernetes pods in a specified names
 - Configurable timeout for API requests
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
 - Support for custom kubeconfig paths
+- Falls back to in-cluster ServiceAccount auth when no kubeconfig is available
 - Supports both exec-based auth flows and legacy auth-provider kubeconfigs
 - Works with any Kubernetes cluster (local, cloud-managed, on-premises)
 
@@ -113,6 +114,10 @@ Pods: 5
 ```bash
 KUBECONFIG=~/.kube/config:~/.kube/staging ./valley
 ```
+
+#### Run inside Kubernetes
+
+If no kubeconfig is mounted, Valley falls back to in-cluster authentication and uses the pod namespace from `POD_NAMESPACE`, the mounted ServiceAccount namespace file, or `default`.
 
 #### Set a custom timeout
 
