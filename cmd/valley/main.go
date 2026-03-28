@@ -11,18 +11,19 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"valley/internal/app"
 	"valley/internal/kube"
-	"valley/internal/output"
+	podresource "valley/internal/resources/pods"
 )
 
 func main() {
 	var namespace string
+	var selector string
 	var kubeconfig string
 	var format string
 	var timeout time.Duration
 
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace to query (defaults to the current kubeconfig namespace or \"default\")")
+	flag.StringVar(&selector, "selector", "", "Label selector to filter pods (for example: app=api)")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&format, "format", "text", "Output format (text, json)")
 	flag.DurationVar(&timeout, "timeout", 15*time.Second, "Timeout for API requests")
@@ -40,12 +41,15 @@ func main() {
 		namespace = defaultNamespace
 	}
 
-	pods, err := app.ListPods(ctx, clientset, app.ListPodsOptions{Namespace: namespace})
+	pods, err := podresource.List(ctx, clientset, podresource.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: selector,
+	})
 	if err != nil {
 		exitErr(fmt.Errorf("failed to list pods: %w", err))
 	}
 
-	if err := output.PrintPods(os.Stdout, pods, format); err != nil {
+	if err := podresource.Print(os.Stdout, pods, format); err != nil {
 		exitErr(fmt.Errorf("failed to print pods: %w", err))
 	}
 

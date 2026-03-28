@@ -5,12 +5,13 @@ A lightweight command-line tool for listing Kubernetes pods in a specified names
 ## Features
 
 - List pods in any Kubernetes namespace
+- Filter pods with Kubernetes label selectors
 - Multiple output formats (text, JSON)
 - Configurable timeout for API requests
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
 - Support for custom kubeconfig paths
 - Falls back to in-cluster ServiceAccount auth when no kubeconfig is available
-- Supports both exec-based auth flows and legacy auth-provider kubeconfigs
+- Supports both exec-based auth flows and legacy auth-provider kubeconfigs when the required auth helper binaries are available in the runtime environment
 - Works with any Kubernetes cluster (local, cloud-managed, on-premises)
 
 ## Requirements
@@ -57,6 +58,7 @@ go run ./cmd/valley -namespace <your-namespace>
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-namespace` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
+| `-selector` | Label selector used to filter pods | None |
 | `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
 | `-format` | Output format (`text` or `json`) | `text` |
 | `-timeout` | Timeout for API requests | `15s` |
@@ -109,6 +111,12 @@ Pods: 5
 ./valley -kubeconfig /path/to/custom/kubeconfig -namespace production
 ```
 
+#### Filter pods by label
+
+```bash
+./valley -namespace production -selector app=api
+```
+
 #### Use standard kubeconfig loading
 
 ```bash
@@ -131,6 +139,30 @@ If no kubeconfig is mounted, Valley falls back to in-cluster authentication and 
 ./valley -namespace oluto -format json | jq '.[] | select(.phase == "Running")'
 ```
 
+## Docker
+
+### Build the image
+
+```bash
+docker build -t valley .
+```
+
+The Dockerfile builds the binary for the target platform and defaults to `linux/amd64` for a plain local `docker build`.
+
+### Run with a mounted kubeconfig
+
+```bash
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -v ~/.kube:/tmp/.kube:ro \
+  valley -kubeconfig /tmp/.kube/config -namespace kube-system
+```
+
+If you run Valley in a container with a mounted kubeconfig, any exec-based auth plugin referenced by that kubeconfig must also be available inside the container. The distroless image is a minimal runtime and does not bundle tools such as `kubelogin`, `aws`, or `gcloud`.
+
+If your kubeconfig depends on one of those helpers and it is not present in the container, authentication will fail even though the kubeconfig file is mounted correctly. This commonly affects AKS, EKS, and GKE kubeconfigs that rely on external login commands.
+
 ## Project Structure
 
 ```
@@ -139,12 +171,12 @@ valley/
 │   └── valley/
 │       └── main.go           # CLI entry point and flag parsing
 ├── internal/
-│   ├── app/
-│   │   └── pods.go           # Business logic: list and transform pods
 │   ├── kube/
 │   │   └── client.go         # Kubernetes client initialization
-│   └── output/
-│       └── pods.go           # Output formatting (text/json)
+│   └── resources/
+│       └── pods/
+│           ├── output.go     # Pod-specific output formatting
+│           └── pods.go       # Pod-specific query and mapping logic
 ├── go.mod
 ├── go.sum
 └── README.md
@@ -158,16 +190,16 @@ valley/
 │  (CLI parsing, wiring, error handling)  │
 └─────────────────────────────────────────┘
                   │
-       ┌──────────┼──────────┐
-       ▼          ▼          ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐
-│  kube/   │ │  app/    │ │  output/ │
-│ client   │ │  pods    │ │  pods    │
-└──────────┘ └──────────┘ └──────────┘
-     │            │            │
-     ▼            ▼            ▼
-  k8s.io/    k8s API     JSON/text
-  client-go    call      encoding
+        ┌─────────┴─────────┐
+        ▼                   ▼
+┌──────────────┐   ┌──────────────────────┐
+│    kube/     │   │  resources/pods/     │
+│ client setup │   │ list + output logic  │
+└──────────────┘   └──────────────────────┘
+        │                   │
+        ▼                   ▼
+  kubeconfig /        k8s API +
+  in-cluster auth     JSON/text encoding
 ```
 
 ## Development
