@@ -13,6 +13,7 @@ func TestRunRoutesToSubcommands(t *testing.T) {
 	originalEvents := runEventsCommand
 	originalTop := runTopCommand
 	originalExplain := runExplainCommand
+	originalAI := runAICommand
 	t.Cleanup(func() {
 		runGetCommand = originalGet
 		runDescribeCommand = originalDescribe
@@ -20,6 +21,7 @@ func TestRunRoutesToSubcommands(t *testing.T) {
 		runEventsCommand = originalEvents
 		runTopCommand = originalTop
 		runExplainCommand = originalExplain
+		runAICommand = originalAI
 	})
 
 	called := map[string]bool{}
@@ -29,6 +31,7 @@ func TestRunRoutesToSubcommands(t *testing.T) {
 	runEventsCommand = func(args []string, stdout, stderr io.Writer) int { called["events"] = true; return 0 }
 	runTopCommand = func(args []string, stdout, stderr io.Writer) int { called["top"] = true; return 0 }
 	runExplainCommand = func(args []string, stdout, stderr io.Writer) int { called["explain"] = true; return 0 }
+	runAICommand = func(args []string, stdout, stderr io.Writer) int { called["ai"] = true; return 0 }
 
 	var out strings.Builder
 	var errOut strings.Builder
@@ -39,8 +42,9 @@ func TestRunRoutesToSubcommands(t *testing.T) {
 	_ = run([]string{"events"}, &out, &errOut)
 	_ = run([]string{"top"}, &out, &errOut)
 	_ = run([]string{"explain"}, &out, &errOut)
+	_ = run([]string{"ai"}, &out, &errOut)
 
-	for _, name := range []string{"get", "describe", "logs", "events", "top", "explain"} {
+	for _, name := range []string{"get", "describe", "logs", "events", "top", "explain", "ai"} {
 		if !called[name] {
 			t.Fatalf("expected %s subcommand to be routed", name)
 		}

@@ -25,6 +25,20 @@ type ExplainResponse struct {
 	NextSteps []string            `json:"next_steps"`
 }
 
+type AskRequest struct {
+	Question      string
+	Namespace     string
+	AllNamespaces bool
+}
+
+type AskResponse struct {
+	SessionID string   `json:"session_id"`
+	Context   string   `json:"context"`
+	Question  string   `json:"question"`
+	Answer    string   `json:"answer"`
+	Observed  []string `json:"observed"`
+}
+
 type Orchestrator struct {
 	Tools    tools.Reader
 	Sessions *SessionStore
@@ -78,7 +92,7 @@ func (o *Orchestrator) Explain(ctx context.Context, req ExplainRequest) (Explain
 
 	summary := []string{
 		fmt.Sprintf("Connected to cluster context %q (%s).", contextName, auth.Server),
-		fmt.Sprintf("%s %s/%s was retrieved successfully.", details.Kind, firstNonEmpty(details.Namespace, "-"), details.Name),
+		fmt.Sprintf("%s %s/%s was retrieved successfully.", details.Kind, firstNonEmptyOrDash(details.Namespace), details.Name),
 	}
 
 	for key, value := range details.Details {
@@ -118,11 +132,85 @@ func (o *Orchestrator) Explain(ctx context.Context, req ExplainRequest) (Explain
 	}, nil
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
+func (o *Orchestrator) Ask(ctx context.Context, req AskRequest) (AskResponse, error) {
+	if o.Tools == nil {
+		return AskResponse{}, fmt.Errorf("ai tools are not configured")
 	}
-	return ""
+	if strings.TrimSpace(req.Question) == "" {
+		return AskResponse{}, fmt.Errorf("question is required")
+	}
+	if o.Client == nil {
+		return AskResponse{}, fmt.Errorf("ai client is not configured")
+	}
+
+	session := Session{}
+	if o.Sessions != nil {
+		session = o.Sessions.NewSession()
+	}
+
+	contextName, err := o.Tools.CurrentContext(ctx)
+	if err != nil {
+		return AskResponse{}, err
+	}
+
+	auth, err := o.Tools.AuthCheck(ctx)
+	if err != nil {
+		return AskResponse{}, fmt.Errorf("auth check failed: %w", err)
+	}
+
+	namespaces, err := o.Tools.ListNamespaces(ctx, 10)
+	if err != nil {
+		return AskResponse{}, err
+	}
+
+	scope := req.Namespace
+	if req.AllNamespaces {
+		scope = "all-namespaces"
+	}
+	if strings.TrimSpace(scope) == "" {
+		scope = "default-context-namespace"
+	}
+
+	observed := []string{
+		fmt.Sprintf("context=%s", contextName),
+		fmt.Sprintf("server=%s", auth.Server),
+		fmt.Sprintf("scope=%s", scope),
+		fmt.Sprintf("namespaces_sample=%s", strings.Join(namespaces, ", ")),
+	}
+
+	systemPrompt := strings.Join([]string{
+		"You are Valley AI operating in read-only mode.",
+		"Use only the observed facts provided.",
+		"Clearly separate observed facts from suggestions.",
+		"Do not propose any write or mutating Kubernetes actions unless clearly marked as suggestion.",
+	}, "\n")
+
+	userPrompt := fmt.Sprintf(
+		"Question: %s\nObserved:\n- %s\n",
+		req.Question,
+		strings.Join(observed, "\n- "),
+	)
+
+	answer, err := o.Client.Complete(ctx, CompletionRequest{
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
+	})
+	if err != nil {
+		return AskResponse{}, err
+	}
+
+	return AskResponse{
+		SessionID: session.ID,
+		Context:   contextName,
+		Question:  req.Question,
+		Answer:    answer,
+		Observed:  observed,
+	}, nil
+}
+
+func firstNonEmptyOrDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }

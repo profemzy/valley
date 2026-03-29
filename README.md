@@ -6,6 +6,7 @@ A lightweight Kubernetes command-line tool focused on high-signal workflows, cle
 
 - Verb-oriented CLI foundation (`valley get ...`)
 - Operational read workflows: `describe`, `logs`, `events`, `top`, `explain`
+- AI troubleshooting command: `ai` (OpenAI-compatible endpoint)
 - Watch support for selected workflows (`get --watch`, `events --watch`, `logs --follow`)
 - Configurable kube context selection with current-context fallback
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
@@ -90,6 +91,24 @@ go run ./cmd/valley get pods -n <your-namespace>
 
 # Explain resource state in plain language (read-only AI facade)
 ./valley explain deployment/oluto-backend -n oluto
+
+# Ask an AI troubleshooting question
+./valley ai "Why is my deployment not available?" -n oluto
+```
+
+### AI Configuration (`.env`)
+
+Valley reads `.env` at startup (without overriding already-exported env vars).
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+VALLEY_AI_BASE_URL=https://api.fuelix.ai/v1
+VALLEY_AI_API_KEY=YOUR_SECRET_TOKEN
+VALLEY_AI_MODEL=claude-sonnet-4-6
+VALLEY_AI_TIMEOUT=30
 ```
 
 ### Current Resource Support
@@ -276,8 +295,10 @@ If your kubeconfig depends on one of those helpers and it is not present in the 
 
 ```
 valley/
+├── .env.example
 ├── cmd/
 │   └── valley/
+│       ├── ai.go             # `ai` command
 │       ├── describe.go       # `describe` command
 │       ├── explain.go        # `explain` command
 │       ├── events.go         # `events` command

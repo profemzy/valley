@@ -88,10 +88,10 @@ Objective: add intelligence through internal tools, not direct client access.
 - [ ] Disallow direct shell execution through model
 
 ### AI Phase 1: Explain and diagnose (read-only)
-- [ ] Add `valley ai "<question>"`
+- [x] Add `valley ai "<question>"`
 - [x] Add `valley explain <resource>`
 - [x] Support internal tools for contexts, namespaces, get/describe/events/logs/auth checks
-- [ ] Ensure graceful failures return explicit tool errors
+- [x] Ensure graceful failures return explicit tool errors
 
 ### AI Phase 2: Guided operational flows
 - [ ] Incident summaries
@@ -139,4 +139,4 @@ Objective: add intelligence through internal tools, not direct client access.
 
 - [ ] Add watch support for more resources/verbs beyond current `get`/`events`
 - [ ] Add end-to-end smoke tests against disposable clusters
-- [ ] Add `valley ai "<question>"` command with model-backed orchestration
+- [ ] Extend AI tool loop to dynamically select/fan-out tools per question

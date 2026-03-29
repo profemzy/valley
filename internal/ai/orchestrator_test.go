@@ -56,3 +56,27 @@ func TestExplainBuildsResponse(t *testing.T) {
 		t.Fatalf("expected one event, got %d", len(resp.Events))
 	}
 }
+
+func TestAskBuildsResponse(t *testing.T) {
+	orch := NewOrchestrator(fakeReader{}, NewSessionStore(), staticClient("analysis"))
+
+	resp, err := orch.Ask(context.Background(), AskRequest{
+		Question:  "why is api slow?",
+		Namespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if resp.Answer != "analysis" {
+		t.Fatalf("unexpected answer: %s", resp.Answer)
+	}
+	if len(resp.Observed) == 0 {
+		t.Fatal("expected observed facts")
+	}
+}
+
+type staticClient string
+
+func (s staticClient) Complete(ctx context.Context, request CompletionRequest) (string, error) {
+	return string(s), nil
+}
