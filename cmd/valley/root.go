@@ -10,6 +10,7 @@ var runDescribeCommand = runDescribe
 var runLogsCommand = runLogs
 var runEventsCommand = runEvents
 var runTopCommand = runTop
+var runExplainCommand = runExplain
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -28,6 +29,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runEventsCommand(args[1:], stdout, stderr)
 	case "top":
 		return runTopCommand(args[1:], stdout, stderr)
+	case "explain":
+		return runExplainCommand(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		printRootUsage(stdout)
 		return 0
@@ -48,6 +51,7 @@ func printRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  logs       Print pod or workload logs")
 	fmt.Fprintln(w, "  events     Show Kubernetes events")
 	fmt.Fprintln(w, "  top        Show cluster health summary")
+	fmt.Fprintln(w, "  explain    Explain resource state in plain language")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Use \"valley <command> --help\" for more information about a command.")
 }

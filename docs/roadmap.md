@@ -78,19 +78,19 @@ Goal: make runtime/discovery robust across larger and diverse clusters.
 Objective: add intelligence through internal tools, not direct client access.
 
 ### AI architecture
-- [ ] Add `internal/ai/client.go`
-- [ ] Add `internal/ai/orchestrator.go`
-- [ ] Add `internal/ai/sessions.go`
-- [ ] Add `internal/ai/prompts/`
-- [ ] Add `internal/ai/tools/`
+- [x] Add `internal/ai/client.go`
+- [x] Add `internal/ai/orchestrator.go`
+- [x] Add `internal/ai/sessions.go`
+- [x] Add `internal/ai/prompts/`
+- [x] Add `internal/ai/tools/`
 - [ ] Keep prompts versioned on disk
 - [ ] Keep tool calls auditable/testable
 - [ ] Disallow direct shell execution through model
 
 ### AI Phase 1: Explain and diagnose (read-only)
 - [ ] Add `valley ai "<question>"`
-- [ ] Add `valley explain <resource>`
-- [ ] Support internal tools for contexts, namespaces, get/describe/events/logs/auth checks
+- [x] Add `valley explain <resource>`
+- [x] Support internal tools for contexts, namespaces, get/describe/events/logs/auth checks
 - [ ] Ensure graceful failures return explicit tool errors
 
 ### AI Phase 2: Guided operational flows
@@ -139,4 +139,4 @@ Objective: add intelligence through internal tools, not direct client access.
 
 - [ ] Add watch support for more resources/verbs beyond current `get`/`events`
 - [ ] Add end-to-end smoke tests against disposable clusters
-- [ ] Start AI Phase 1 (`internal/ai` + read-only tool facade)
+- [ ] Add `valley ai "<question>"` command with model-backed orchestration

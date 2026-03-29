@@ -1,11 +1,11 @@
 # Valley
 
-A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley supports typed `get` workflows plus operational commands such as `describe`, `logs`, `events`, and `top`.
+A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley supports typed `get` workflows plus operational commands such as `describe`, `logs`, `events`, `top`, and `explain`.
 
 ## Features
 
 - Verb-oriented CLI foundation (`valley get ...`)
-- Operational read workflows: `describe`, `logs`, `events`, `top`
+- Operational read workflows: `describe`, `logs`, `events`, `top`, `explain`
 - Watch support for selected workflows (`get --watch`, `events --watch`, `logs --follow`)
 - Configurable kube context selection with current-context fallback
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
@@ -87,6 +87,9 @@ go run ./cmd/valley get pods -n <your-namespace>
 # Cluster health summary
 ./valley top -n oluto
 ./valley top -A -o json
+
+# Explain resource state in plain language (read-only AI facade)
+./valley explain deployment/oluto-backend -n oluto
 ```
 
 ### Current Resource Support
@@ -276,6 +279,7 @@ valley/
 ├── cmd/
 │   └── valley/
 │       ├── describe.go       # `describe` command
+│       ├── explain.go        # `explain` command
 │       ├── events.go         # `events` command
 │       ├── get.go            # `get` subcommand wiring and shared flags
 │       ├── logs.go           # `logs` command
@@ -285,6 +289,12 @@ valley/
 ├── docs/
 │   └── roadmap.md            # Planned feature and architecture roadmap
 ├── internal/
+│   ├── ai/
+│   │   ├── client.go         # AI client abstraction
+│   │   ├── orchestrator.go   # Read-only AI orchestration
+│   │   ├── sessions.go       # Session tracking
+│   │   ├── prompts/          # Versioned prompt files
+│   │   └── tools/            # Read-only internal tool facade
 │   ├── kube/
 │   │   └── client.go         # Runtime initialization, discovery, and kubeconfig resolution
 │   └── resources/
