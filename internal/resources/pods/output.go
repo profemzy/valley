@@ -1,9 +1,10 @@
 package pods
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
+
+	resourcecommon "valley/internal/resources/common"
 )
 
 func Print(w io.Writer, pods []Info, format string) error {
@@ -11,7 +12,7 @@ func Print(w io.Writer, pods []Info, format string) error {
 	case "text":
 		return printText(w, pods)
 	case "json":
-		return printJSON(w, pods)
+		return resourcecommon.PrintJSON(w, pods)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
@@ -29,10 +30,4 @@ func printText(w io.Writer, pods []Info) error {
 	}
 
 	return nil
-}
-
-func printJSON(w io.Writer, pods []Info) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(pods)
 }

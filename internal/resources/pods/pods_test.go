@@ -8,6 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	resourcecommon "valley/internal/resources/common"
 )
 
 func TestListMapsAndSortsPods(t *testing.T) {
@@ -26,7 +28,7 @@ func TestListMapsAndSortsPods(t *testing.T) {
 		},
 	)
 
-	pods, err := List(context.Background(), client, ListOptions{Namespace: "team-a"})
+	pods, err := List(context.Background(), client, resourcecommon.QueryOptions{Namespace: "team-a"})
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
@@ -61,7 +63,7 @@ func TestListAppliesLabelSelector(t *testing.T) {
 		},
 	)
 
-	pods, err := List(context.Background(), client, ListOptions{
+	pods, err := List(context.Background(), client, resourcecommon.QueryOptions{
 		Namespace:     "team-a",
 		LabelSelector: "app=api",
 	})
@@ -81,7 +83,7 @@ func TestListAppliesLabelSelector(t *testing.T) {
 func TestListRejectsEmptyNamespace(t *testing.T) {
 	client := fake.NewSimpleClientset()
 
-	_, err := List(context.Background(), client, ListOptions{})
+	_, err := List(context.Background(), client, resourcecommon.QueryOptions{})
 	if err == nil {
 		t.Fatal("expected empty namespace error")
 	}

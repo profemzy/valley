@@ -15,17 +15,17 @@ func TestNewClientsetUsesExplicitKubeconfigPath(t *testing.T) {
 
 	explicitPath := writeKubeconfig(t, t.TempDir(), "explicit-ns")
 
-	clientset, namespace, err := NewClientset(explicitPath)
+	runtime, err := NewRuntime(ConfigRef{KubeconfigPath: explicitPath})
 	if err != nil {
-		t.Fatalf("NewClientset returned error: %v", err)
+		t.Fatalf("NewRuntime returned error: %v", err)
 	}
 
-	if clientset == nil {
-		t.Fatal("expected clientset")
+	if runtime.Typed == nil {
+		t.Fatal("expected typed client")
 	}
 
-	if namespace != "explicit-ns" {
-		t.Fatalf("expected explicit namespace, got %q", namespace)
+	if runtime.EffectiveNamespace != "explicit-ns" {
+		t.Fatalf("expected explicit namespace, got %q", runtime.EffectiveNamespace)
 	}
 }
 
@@ -33,30 +33,30 @@ func TestNewClientsetUsesKUBECONFIGWhenPathOmitted(t *testing.T) {
 	kubeconfigPath := writeKubeconfig(t, t.TempDir(), "env-ns")
 	t.Setenv("KUBECONFIG", kubeconfigPath)
 
-	clientset, namespace, err := NewClientset("")
+	runtime, err := NewRuntime(ConfigRef{})
 	if err != nil {
-		t.Fatalf("NewClientset returned error: %v", err)
+		t.Fatalf("NewRuntime returned error: %v", err)
 	}
 
-	if clientset == nil {
-		t.Fatal("expected clientset")
+	if runtime.Typed == nil {
+		t.Fatal("expected typed client")
 	}
 
-	if namespace != "env-ns" {
-		t.Fatalf("expected namespace from KUBECONFIG, got %q", namespace)
+	if runtime.EffectiveNamespace != "env-ns" {
+		t.Fatalf("expected namespace from KUBECONFIG, got %q", runtime.EffectiveNamespace)
 	}
 }
 
 func TestNewClientsetDefaultsNamespaceWhenUnset(t *testing.T) {
 	kubeconfigPath := writeKubeconfig(t, t.TempDir(), "")
 
-	_, namespace, err := NewClientset(kubeconfigPath)
+	runtime, err := NewRuntime(ConfigRef{KubeconfigPath: kubeconfigPath})
 	if err != nil {
-		t.Fatalf("NewClientset returned error: %v", err)
+		t.Fatalf("NewRuntime returned error: %v", err)
 	}
 
-	if namespace != "default" {
-		t.Fatalf("expected default namespace, got %q", namespace)
+	if runtime.EffectiveNamespace != "default" {
+		t.Fatalf("expected default namespace, got %q", runtime.EffectiveNamespace)
 	}
 }
 
@@ -73,17 +73,20 @@ func TestNewClientsetFallsBackToInClusterConfig(t *testing.T) {
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing-config"))
 	t.Setenv("POD_NAMESPACE", "in-cluster-ns")
 
-	clientset, namespace, err := NewClientset("")
+	runtime, err := NewRuntime(ConfigRef{})
 	if err != nil {
-		t.Fatalf("NewClientset returned error: %v", err)
+		t.Fatalf("NewRuntime returned error: %v", err)
 	}
 
-	if clientset == nil {
-		t.Fatal("expected clientset")
+	if runtime.Typed == nil {
+		t.Fatal("expected typed client")
 	}
 
-	if namespace != "in-cluster-ns" {
-		t.Fatalf("expected in-cluster namespace, got %q", namespace)
+	if runtime.EffectiveNamespace != "in-cluster-ns" {
+		t.Fatalf("expected in-cluster namespace, got %q", runtime.EffectiveNamespace)
+	}
+	if runtime.EffectiveContext != "in-cluster" {
+		t.Fatalf("expected in-cluster context, got %q", runtime.EffectiveContext)
 	}
 }
 
@@ -99,7 +102,7 @@ func TestNewClientsetDoesNotHideExplicitKubeconfigErrors(t *testing.T) {
 		return &rest.Config{Host: "https://10.0.0.1:443"}, nil
 	}
 
-	_, _, err := NewClientset(filepath.Join(t.TempDir(), "missing-config"))
+	_, err := NewRuntime(ConfigRef{KubeconfigPath: filepath.Join(t.TempDir(), "missing-config")})
 	if err == nil {
 		t.Fatal("expected explicit kubeconfig error")
 	}
@@ -121,13 +124,45 @@ func TestLoadConfigReturnsCombinedErrorWhenBothKubeconfigAndInClusterFail(t *tes
 
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing-config"))
 
-	_, _, err := loadConfig("")
+	_, _, _, err := loadConfig(ConfigRef{})
 	if err == nil {
 		t.Fatal("expected error when kubeconfig and in-cluster config are unavailable")
 	}
 
 	if got := err.Error(); got == "" || !containsAll(got, []string{"failed to build kubeconfig", "failed to load in-cluster config"}) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewRuntimeUsesExplicitContextOverride(t *testing.T) {
+	kubeconfigPath := writeMultiContextKubeconfig(t, t.TempDir())
+
+	runtime, err := NewRuntime(ConfigRef{KubeconfigPath: kubeconfigPath, Context: "staging"})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+
+	if runtime.EffectiveContext != "staging" {
+		t.Fatalf("expected staging context, got %q", runtime.EffectiveContext)
+	}
+	if runtime.EffectiveNamespace != "staging-ns" {
+		t.Fatalf("expected staging namespace, got %q", runtime.EffectiveNamespace)
+	}
+}
+
+func TestNewRuntimeDefaultsToCurrentContext(t *testing.T) {
+	kubeconfigPath := writeMultiContextKubeconfig(t, t.TempDir())
+
+	runtime, err := NewRuntime(ConfigRef{KubeconfigPath: kubeconfigPath})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+
+	if runtime.EffectiveContext != "default" {
+		t.Fatalf("expected default context, got %q", runtime.EffectiveContext)
+	}
+	if runtime.EffectiveNamespace != "default-ns" {
+		t.Fatalf("expected default namespace, got %q", runtime.EffectiveNamespace)
 	}
 }
 
@@ -153,6 +188,40 @@ func writeKubeconfig(t *testing.T, dir, namespace string) string {
 		namespaceLine +
 		"    user: user\n" +
 		"current-context: context\n" +
+		"users:\n" +
+		"- name: user\n" +
+		"  user:\n" +
+		"    token: test-token\n"
+
+	if err := os.WriteFile(kubeconfigPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+
+	return kubeconfigPath
+}
+
+func writeMultiContextKubeconfig(t *testing.T, dir string) string {
+	t.Helper()
+
+	kubeconfigPath := filepath.Join(dir, "config")
+	content := "apiVersion: v1\n" +
+		"kind: Config\n" +
+		"clusters:\n" +
+		"- name: cluster\n" +
+		"  cluster:\n" +
+		"    server: https://127.0.0.1:6443\n" +
+		"contexts:\n" +
+		"- name: default\n" +
+		"  context:\n" +
+		"    cluster: cluster\n" +
+		"    namespace: default-ns\n" +
+		"    user: user\n" +
+		"- name: staging\n" +
+		"  context:\n" +
+		"    cluster: cluster\n" +
+		"    namespace: staging-ns\n" +
+		"    user: user\n" +
+		"current-context: default\n" +
 		"users:\n" +
 		"- name: user\n" +
 		"  user:\n" +

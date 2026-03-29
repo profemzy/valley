@@ -1,11 +1,15 @@
 # Valley
 
-A lightweight command-line tool for listing Kubernetes pods in a specified namespace. Built with the official Kubernetes Go client (`client-go`), Valley provides a simple and fast way to query pod information from your cluster.
+A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley currently supports `get pods` and `get deployments` and is structured to grow into a broader `kubectl`-style interface.
 
 ## Features
 
+- Verb-oriented CLI foundation (`valley get ...`)
+- Configurable kube context selection with current-context fallback
+- Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
 - List pods in any Kubernetes namespace
-- Filter pods with Kubernetes label selectors
+- List deployments in any Kubernetes namespace
+- Filter resources with Kubernetes label selectors
 - Multiple output formats (text, JSON)
 - Configurable timeout for API requests
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
@@ -38,7 +42,7 @@ go build -o valley ./cmd/valley
 ### Run Directly
 
 ```bash
-go run ./cmd/valley -namespace <your-namespace>
+go run ./cmd/valley get pods -n <your-namespace>
 ```
 
 ## Usage
@@ -47,20 +51,33 @@ go run ./cmd/valley -namespace <your-namespace>
 
 ```bash
 # List pods in the current kubeconfig namespace (or "default" if unset)
-./valley
+./valley get pods
 
 # List pods in a specific namespace
-./valley -namespace kube-system
+./valley get pods -n kube-system
+
+# List deployments in a specific namespace
+./valley get deployments -n kube-system
+
+# List a generic resource through discovery
+./valley get configmaps -n kube-system
 ```
 
-### Command-Line Flags
+### Current Resource Support
+
+- Typed handlers with resource-specific output: `pods`, `deployments`
+- Generic discovery fallback: any discoverable Kubernetes resource or CRD, for example `configmaps`, `secrets`, `ingresses`, or `httproutes`
+- Generic fallback currently uses a simple text view plus JSON output; richer typed output is added resource by resource
+
+### `get` Command Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-namespace` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
-| `-selector` | Label selector used to filter pods | None |
+| `-namespace`, `-n` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
+| `-selector`, `-l` | Label selector used to filter resources | None |
+| `-context` | Kubeconfig context to use | Current kubeconfig context |
 | `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
-| `-format` | Output format (`text` or `json`) | `text` |
+| `-output`, `-o` | Output format (`text` or `json`) | `text` |
 | `-timeout` | Timeout for API requests | `15s` |
 
 ### Examples
@@ -68,7 +85,7 @@ go run ./cmd/valley -namespace <your-namespace>
 #### List pods in text format (default)
 
 ```bash
-./valley -namespace oluto -format text
+./valley get pods -n oluto -o text
 ```
 
 **Output:**
@@ -84,7 +101,7 @@ Pods: 5
 #### List pods in JSON format
 
 ```bash
-./valley -namespace oluto -format json
+./valley get pods -n oluto -o json
 ```
 
 **Output:**
@@ -108,19 +125,25 @@ Pods: 5
 #### Use a custom kubeconfig
 
 ```bash
-./valley -kubeconfig /path/to/custom/kubeconfig -namespace production
+./valley get pods -kubeconfig /path/to/custom/kubeconfig -n production
 ```
 
 #### Filter pods by label
 
 ```bash
-./valley -namespace production -selector app=api
+./valley get pods -n production -l app=api
+```
+
+#### Use a specific kube context
+
+```bash
+./valley get pods --context production -n backend
 ```
 
 #### Use standard kubeconfig loading
 
 ```bash
-KUBECONFIG=~/.kube/config:~/.kube/staging ./valley
+KUBECONFIG=~/.kube/config:~/.kube/staging ./valley get pods
 ```
 
 #### Run inside Kubernetes
@@ -130,13 +153,39 @@ If no kubeconfig is mounted, Valley falls back to in-cluster authentication and 
 #### Set a custom timeout
 
 ```bash
-./valley -namespace kube-system -timeout 30s
+./valley get pods -n kube-system -timeout 30s
 ```
 
 #### Pipe JSON output to jq
 
 ```bash
-./valley -namespace oluto -format json | jq '.[] | select(.phase == "Running")'
+./valley get pods -n oluto -o json | jq '.[] | select(.phase == "Running")'
+```
+
+#### List deployments in text format
+
+```bash
+./valley get deployments -n oluto
+```
+
+**Output:**
+```
+Deployments: 2
+  oluto/api ready=3/3 updated=3 available=3
+  oluto/web ready=2/2 updated=2 available=2
+```
+
+#### List a generic resource or CRD
+
+```bash
+./valley get configmaps -n oluto
+./valley get httproutes -n oluto
+```
+
+**Generic text output example:**
+```
+configmaps: 1
+  configmap oluto/app-config
 ```
 
 ## Docker
@@ -156,7 +205,7 @@ docker run --rm \
   --user "$(id -u):$(id -g)" \
   -e HOME=/tmp \
   -v ~/.kube:/tmp/.kube:ro \
-  valley -kubeconfig /tmp/.kube/config -namespace kube-system
+  valley get pods -kubeconfig /tmp/.kube/config -n kube-system
 ```
 
 If you run Valley in a container with a mounted kubeconfig, any exec-based auth plugin referenced by that kubeconfig must also be available inside the container. The distroless image is a minimal runtime and does not bundle tools such as `kubelogin`, `aws`, or `gcloud`.
@@ -169,12 +218,28 @@ If your kubeconfig depends on one of those helpers and it is not present in the 
 valley/
 ├── cmd/
 │   └── valley/
-│       └── main.go           # CLI entry point and flag parsing
+│       ├── get.go            # `get` subcommand wiring and shared flags
+│       ├── main.go           # CLI bootstrap
+│       └── root.go           # Root command dispatch
+├── docs/
+│   └── roadmap.md            # Planned feature and architecture roadmap
 ├── internal/
 │   ├── kube/
-│   │   └── client.go         # Kubernetes client initialization
+│   │   └── client.go         # Runtime initialization, discovery, and kubeconfig resolution
 │   └── resources/
+│       ├── common/
+│       │   ├── output.go     # Shared JSON formatting helpers
+│       │   ├── query.go      # Shared query options for resource handlers
+│       │   └── registry.go   # Resource registry for verb handlers
+│       ├── deployments/
+│       │   ├── get.go        # `get deployments` handler
+│       │   ├── output.go     # Deployment-specific output formatting
+│       │   └── deployments.go # Deployment-specific query and mapping logic
+│       ├── generic/
+│       │   ├── get.go        # Generic discovery-based `get` fallback
+│       │   └── get_test.go   # Generic fallback tests
 │       └── pods/
+│           ├── get.go        # `get pods` handler
 │           ├── output.go     # Pod-specific output formatting
 │           └── pods.go       # Pod-specific query and mapping logic
 ├── go.mod
@@ -186,21 +251,25 @@ valley/
 
 ```
 ┌─────────────────────────────────────────┐
-│           cmd/valley/main.go            │
-│  (CLI parsing, wiring, error handling)  │
+│      cmd/valley/root.go + get.go        │
+│ (verb dispatch, shared flags, routing)  │
 └─────────────────────────────────────────┘
                   │
         ┌─────────┴─────────┐
         ▼                   ▼
 ┌──────────────┐   ┌──────────────────────┐
-│    kube/     │   │  resources/pods/     │
-│ client setup │   │ list + output logic  │
+│    kube/     │   │  resources/*         │
+│ runtime/fac. │   │ typed + generic get  │
 └──────────────┘   └──────────────────────┘
         │                   │
         ▼                   ▼
   kubeconfig /        k8s API +
-  in-cluster auth     JSON/text encoding
+  context / disco     resource rendering
 ```
+
+## Roadmap
+
+The next planned features and architecture milestones live in [docs/roadmap.md](/home/profemzy/projects/valley/docs/roadmap.md).
 
 ## Development
 
@@ -250,7 +319,7 @@ kubectl auth can-i list pods -n <namespace>
 Increase the timeout value for slow networks or large clusters:
 
 ```bash
-./valley -timeout 60s
+./valley get pods -timeout 60s
 ```
 
 ## License

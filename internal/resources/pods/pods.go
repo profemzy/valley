@@ -7,12 +7,9 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-)
 
-type ListOptions struct {
-	Namespace     string
-	LabelSelector string
-}
+	resourcecommon "valley/internal/resources/common"
+)
 
 type Info struct {
 	Namespace string `json:"namespace"`
@@ -21,7 +18,7 @@ type Info struct {
 	IP        string `json:"ip"`
 }
 
-func List(ctx context.Context, client kubernetes.Interface, opts ListOptions) ([]Info, error) {
+func List(ctx context.Context, client kubernetes.Interface, opts resourcecommon.QueryOptions) ([]Info, error) {
 	if opts.Namespace == "" {
 		return nil, fmt.Errorf("namespace is required")
 	}
