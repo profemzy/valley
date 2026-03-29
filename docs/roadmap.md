@@ -1,286 +1,143 @@
 # Valley Roadmap
 
-## Purpose
+This roadmap is task-first and checkbox-driven so progress is easy to track.
 
-This document tracks the planned evolution of Valley from a small `get`-focused Kubernetes CLI into a broader, easier-to-use, intelligence-assisted operational tool.
+Legend:
+- `[x]` completed
+- `[ ]` planned / in progress
 
-The goal is not to clone `kubectl` mechanically. The goal is:
+Last updated: March 28, 2026
 
-- keep the breadth and correctness people expect from `kubectl`
-- present higher-signal output by default
-- reduce operational friction with better defaults and clearer workflows
-- add AI assistance through a controlled internal tool layer rather than ad hoc model calls
+## Phase 1: Strengthen `get`
 
-## Current Foundation
+Goal: make `get` useful for daily workflows before expanding verbs.
 
-Valley now has the core structural pieces needed for growth:
+### Output and UX
+- [x] Improve generic fallback default table output
+- [x] Include metadata columns (`kind`, `namespace`, `name`, `age`) where available
+- [x] Add optional `-o wide` support
+- [x] Add output format `-o yaml`
+- [x] Add output format `-o name`
 
-- Verb-oriented CLI foundation: `valley get ...`
-- Reusable Kubernetes runtime with:
-  - kubeconfig loading
-  - explicit `--context` override
-  - current-context fallback
-  - in-cluster fallback
-  - typed client
-  - dynamic client
-  - discovery client
-  - REST mapper
-- Typed resource handlers for:
-  - `pods`
-  - `deployments`
-- Generic discovery-based fallback for `get <resource>`
-- `get` query options now include:
-  - label selectors
-  - field selectors
-  - `--all-namespaces`
-- `get` output formats now include:
-  - `text`
-  - `wide`
-  - `json`
-  - `yaml`
-  - `name`
-- Shared resource contracts kept intentionally small:
-  - query options
-  - JSON/YAML formatting
-  - handler registry
+### Query options
+- [x] Add `--all-namespaces` / `-A`
+- [x] Add field selectors (`--field-selector`)
+- [x] Keep label selectors (`-l`, `--selector`) supported
+- [ ] Add limit/pagination where practical
 
-This is the right base for breadth without forcing every resource into one weak abstraction.
+### Typed handlers
+- [x] `pods`
+- [x] `deployments`
+- [ ] `services`
+- [ ] `namespaces`
+- [ ] `nodes`
+- [ ] `events`
 
-## Engineering Principles
+### Exit criteria
+- [ ] `get` feels useful for common built-in resources
+- [ ] Generic fallback is good enough for unknown resources and CRDs
+- [ ] Typed handlers are used where richer UX clearly matters
 
-- Keep commands verb-oriented.
-- Keep resource logic resource-specific.
-- Extract shared contracts only when repetition is real.
-- Prefer typed handlers for high-value resources.
-- Preserve generic fallback for breadth and CRD support.
-- Keep AI on top of stable internal tools, never on top of raw Kubernetes clients.
-- Add mutating capabilities only after read-only flows are strong and observable.
-
-## Near-Term Milestones
-
-### Phase 1: Strengthen `get`
-
-Goal: make `get` useful across more day-to-day workflows before expanding verbs.
-
-Status as of March 28, 2026:
-
-- Completed:
-  - Improve generic fallback output:
-    - better default table views
-    - metadata columns such as namespace, age, and kind where available
-    - optional `-o wide`
-  - Add more output formats:
-    - `yaml`
-    - `name`
-  - Add common query options:
-    - `--all-namespaces`
-    - field selectors
-- Remaining:
-  - Add typed handlers for:
-    - `services`
-    - `namespaces`
-    - `nodes`
-    - `events`
-  - Add common query options:
-    - limit/pagination where practical
-
-Planned work (remaining):
-
-- Add typed handlers for:
-  - `services`
-  - `namespaces`
-  - `nodes`
-  - `events`
-- Improve generic fallback output:
-  - better default table views
-  - metadata columns such as namespace, age, and kind where available
-  - optional `-o wide`
-- Add more output formats:
-  - `yaml`
-  - `name`
-- Add common query options:
-  - `--all-namespaces`
-  - field selectors
-  - limit/pagination where practical
-
-Exit criteria:
-
-- `get` feels useful for common built-in resources
-- generic fallback is good enough for unknown resources and CRDs
-- typed handlers are reserved for resources where better UX clearly matters
-
-### Phase 2: Add More Verbs
+## Phase 2: Add More Verbs
 
 Goal: move from inventory-style commands to operational workflows.
 
-Planned commands:
+### Planned verbs
+- [ ] `valley describe <resource>`
+- [ ] `valley logs <target>`
+- [ ] `valley events [resource]`
+- [ ] `valley top` (or equivalent health views)
 
-- `valley describe <resource>`
-- `valley logs <target>`
-- `valley events [resource]`
-- `valley top` or equivalent cluster-health views
+### Design constraints
+- [ ] Keep each verb routed through the same runtime/factory
+- [ ] Prefer typed handlers for richer output
+- [ ] Keep generic fallback where safe and meaningful
 
-Design constraints:
+### Exit criteria
+- [ ] Cover the most common read-only debugging flows
+- [ ] Keep command structure simple and predictable
 
-- keep each verb routed through the same runtime/factory
-- prefer typed handlers for richer output
-- keep generic fallback available where it is safe and meaningful
+## Phase 3: Runtime and Discovery Hardening
 
-Exit criteria:
+Goal: make runtime/discovery robust across larger and diverse clusters.
 
-- Valley covers the most common read-only debugging flows
-- command structure remains simple and predictable
+### Planned work
+- [ ] Improve cached discovery strategy
+- [ ] Improve REST mapping refresh behavior
+- [ ] Improve cluster-scoped resource handling
+- [ ] Clean up namespace/defaulting policy across verbs
+- [ ] Add watch support for selected verbs/resources
+- [ ] Improve error messaging around auth, missing API groups, and context mistakes
 
-### Phase 3: Improve Runtime and Discovery
+### Exit criteria
+- [ ] Discovery and mapping are resilient across clusters
+- [ ] Runtime behavior is explicit and testable
 
-Goal: make the runtime layer robust enough for larger clusters and broader resource coverage.
+## AI Roadmap (Read-Only First)
 
-Planned work:
+Objective: add intelligence through internal tools, not direct client access.
 
-- cached discovery strategy improvements
-- REST mapping refresh behavior
-- better handling for cluster-scoped resources
-- namespace/defaulting policy cleanup across verbs
-- watch support for selected verbs/resources
-- better error messages around auth, missing API groups, and context mistakes
+### AI architecture
+- [ ] Add `internal/ai/client.go`
+- [ ] Add `internal/ai/orchestrator.go`
+- [ ] Add `internal/ai/sessions.go`
+- [ ] Add `internal/ai/prompts/`
+- [ ] Add `internal/ai/tools/`
+- [ ] Keep prompts versioned on disk
+- [ ] Keep tool calls auditable/testable
+- [ ] Disallow direct shell execution through model
 
-Exit criteria:
+### AI Phase 1: Explain and diagnose (read-only)
+- [ ] Add `valley ai "<question>"`
+- [ ] Add `valley explain <resource>`
+- [ ] Support internal tools for contexts, namespaces, get/describe/events/logs/auth checks
+- [ ] Ensure graceful failures return explicit tool errors
 
-- discovery and mapping are resilient across clusters
-- runtime behavior is explicit and testable
+### AI Phase 2: Guided operational flows
+- [ ] Incident summaries
+- [ ] Rollout health diagnosis
+- [ ] Suggested next commands
+- [ ] Context-aware troubleshooting playbooks
+- [ ] Keep suggestions clearly separate from observed facts
 
-## AI Roadmap
+### AI Phase 3: Controlled write assistance
+- [ ] Draft manifest patches
+- [ ] Draft Valley/`kubectl` remediation commands
+- [ ] Guided change plans
+- [ ] Explicit dry-run support
+- [ ] Diff preview
+- [ ] Confirmation gates
+- [ ] Audit logging
+- [ ] Clear distinction between proposed and executed actions
 
-### Objective
+## Documentation
 
-Use `github.com/openai/openai-go/v3` to add intelligence that `kubectl` does not provide, without making the tool opaque or unsafe.
+- [ ] Command reference per verb
+- [ ] Resource support matrix
+- [ ] Typed vs generic examples
+- [ ] Auth-provider troubleshooting guide
+- [ ] AI safety/privacy guide
 
-The model should help users:
+## Testing
 
-- diagnose failures faster
-- explain resource state in plain language
-- synthesize information across multiple Kubernetes reads
-- propose next debugging steps
+- [x] Unit tests for current typed handlers (`pods`, `deployments`)
+- [x] Unit tests for generic fallback behavior
+- [x] Runtime tests for kubeconfig/context selection
+- [x] Command-level tests for current `get` routing/flags
+- [ ] Unit tests for each new typed handler as added
+- [ ] AI tool tests independent of model output
+- [ ] End-to-end smoke tests against a disposable cluster
 
-The model should not directly operate Kubernetes clients.
+## Non-Goals (Current)
 
-### AI Architecture
+- [x] Do not clone every `kubectl` subcommand immediately
+- [x] Do not force a universal resource data model
+- [x] Do not allow early AI-driven cluster mutation
+- [x] Do not introduce a heavyweight CLI framework without clear need
 
-Planned structure:
+## Next Up
 
-```text
-internal/ai/
-  client.go
-  orchestrator.go
-  sessions.go
-  prompts/
-  tools/
-```
-
-Rules:
-
-- AI only interacts with internal read-only tools
-- tools return structured data
-- tool calls are auditable and testable
-- prompts are versioned and kept on disk
-- no direct shell execution through the model
-
-### AI Feature Phases
-
-#### AI Phase 1: Read-Only Explain and Diagnose
-
-Planned commands:
-
-- `valley ai "<question>"`
-- `valley explain <resource>`
-
-Initial tool set:
-
-- list contexts
-- list namespaces
-- get resources
-- describe resource
-- fetch events
-- fetch logs
-- auth checks
-
-Use cases:
-
-- "Why is this deployment not becoming available?"
-- "Summarize what is failing in namespace X"
-- "Explain this pod status in plain English"
-
-Exit criteria:
-
-- AI can answer questions using internal tools only
-- AI output is reproducible enough for operational use
-- failures degrade to explicit tool errors rather than silent nonsense
-
-#### AI Phase 2: Guided Operational Flows
-
-Planned capabilities:
-
-- incident summaries
-- rollout health diagnosis
-- suggested next commands
-- context-aware troubleshooting playbooks
-
-Constraints:
-
-- still read-only by default
-- suggestions must be distinguishable from observed facts
-
-#### AI Phase 3: Controlled Write Assistance
-
-This phase should happen only after the read-only stack is stable.
-
-Possible capabilities:
-
-- draft patches to manifests
-- draft `kubectl`/Valley remediation commands
-- guided change plans
-
-Required safeguards:
-
-- explicit dry-run support
-- diff preview
-- confirmation gates
-- audit logging
-- clear distinction between proposed and executed actions
-
-## Documentation Work
-
-Planned documentation additions:
-
-- command reference per verb
-- resource support matrix
-- examples for typed vs generic resources
-- troubleshooting guide by auth provider
-- AI safety and privacy guide
-
-## Testing Strategy
-
-As the feature set grows, test coverage should expand in parallel:
-
-- unit tests for each typed handler
-- unit tests for generic fallback behavior
-- runtime tests for kubeconfig/context selection
-- command-level tests for verb routing
-- AI tool tests independent of model output
-- end-to-end smoke tests against a disposable cluster where practical
-
-## Non-Goals For Now
-
-- cloning every `kubectl` subcommand immediately
-- building a universal resource data model
-- allowing the AI layer to mutate clusters early
-- introducing a heavyweight CLI framework without real need
-
-## Recommended Next Steps
-
-1. Add typed `services` and `namespaces`.
-2. Add typed `nodes` and `events`.
-3. Add limit/pagination support where practical for `get`.
-4. Add the `describe` verb.
-5. Stand up the internal AI package and read-only tool facade using `openai-go/v3`.
-6. Add `valley ai` only after the internal tools are stable enough to support it.
+- [ ] Add typed `services` and `namespaces`
+- [ ] Add typed `nodes` and `events`
+- [ ] Add pagination/limit support for `get`
+- [ ] Start `describe` verb
