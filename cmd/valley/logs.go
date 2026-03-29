@@ -79,13 +79,14 @@ func runLogs(args []string, stdout, stderr io.Writer) int {
 		Context:        kubeCtx,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", err)
+		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", kube.FormatRuntimeInitError(err, kube.ConfigRef{
+			KubeconfigPath: kubeconfig,
+			Context:        kubeCtx,
+		}))
 		return 1
 	}
 
-	if !allNamespace && namespace == "" {
-		namespace = rt.EffectiveNamespace
-	}
+	namespace = resolveNamespaceOrDefault(rt, namespace, allNamespace)
 
 	pod, err := resolveLogTargetPod(ctx, rt, target, namespace, allNamespace)
 	if err != nil {

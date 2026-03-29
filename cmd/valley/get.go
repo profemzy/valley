@@ -65,6 +65,8 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.FieldSelector, "field-selector", "", "Field selector to filter resources (for example: status.phase=Running)")
 	fs.BoolVar(&opts.AllNamespaces, "all-namespaces", false, "Query resources across all namespaces")
 	fs.BoolVar(&opts.AllNamespaces, "A", false, "Query resources across all namespaces")
+	fs.BoolVar(&opts.Watch, "watch", false, "Watch for changes after listing resources")
+	fs.BoolVar(&opts.Watch, "w", false, "Watch for changes after listing resources")
 	fs.StringVar(&opts.Output, "output", "text", "Output format (text, wide, json, yaml, name)")
 	fs.StringVar(&opts.Output, "o", "text", "Output format (text, wide, json, yaml, name)")
 	fs.Int64Var(&opts.Limit, "limit", 0, "Maximum number of resources to return")
@@ -102,24 +104,35 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 		Context:        kubeCtx,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", err)
+		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", kube.FormatRuntimeInitError(err, kube.ConfigRef{
+			KubeconfigPath: kubeconfig,
+			Context:        kubeCtx,
+		}))
 		return 1
 	}
 
-	if opts.AllNamespaces {
-		opts.Namespace = ""
-	} else if opts.Namespace == "" {
-		opts.Namespace = rt.EffectiveNamespace
-	}
+	opts.Namespace = resolveNamespaceOrDefault(rt, opts.Namespace, opts.AllNamespaces)
 
 	var errRun error
-	if ok {
+	if opts.Watch {
+		if ok {
+			errRun = handler.Get(ctx, rt, opts, stdout)
+		} else {
+			errRun = genericresource.Get(ctx, rt, resourceName, opts, stdout)
+		}
+		if errRun == nil {
+			errRun = runGetWatch(ctx, rt, resourceName, opts, stdout)
+		}
+	} else if ok {
 		errRun = handler.Get(ctx, rt, opts, stdout)
 	} else {
 		errRun = genericresource.Get(ctx, rt, resourceName, opts, stdout)
 	}
 
 	if errRun != nil {
+		if opts.Watch && (errRun == context.Canceled || errRun == context.DeadlineExceeded) {
+			return 0
+		}
 		fmt.Fprintf(stderr, "error: %v\n", errRun)
 		return 1
 	}
@@ -154,6 +167,8 @@ func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "        Field selector to filter resources")
 	fmt.Fprintln(w, "  -all-namespaces, -A")
 	fmt.Fprintln(w, "        Query resources across all namespaces")
+	fmt.Fprintln(w, "  -watch, -w")
+	fmt.Fprintln(w, "        Watch for changes after listing resources")
 	fmt.Fprintln(w, "  -output, -o string")
 	fmt.Fprintln(w, "        Output format (text, wide, json, yaml, name)")
 	fmt.Fprintln(w, "  -limit int")
@@ -166,4 +181,23 @@ func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "        Kubeconfig context to use")
 	fmt.Fprintln(w, "  -timeout duration")
 	fmt.Fprintln(w, "        Timeout for API requests")
+}
+
+func runGetWatch(ctx context.Context, rt *kube.Runtime, resourceName string, opts resourcecommon.QueryOptions, w io.Writer) error {
+	if opts.Output != "text" {
+		return fmt.Errorf("--watch currently supports only text output")
+	}
+
+	switch strings.ToLower(resourceName) {
+	case "pods", "pod", "po":
+		return pods.Watch(ctx, rt.Typed, opts, w)
+	case "deployments", "deployment", "deploy":
+		return deployments.Watch(ctx, rt.Typed, opts, w)
+	case "services", "service", "svc":
+		return services.Watch(ctx, rt.Typed, opts, w)
+	case "events", "event", "ev":
+		return events.Watch(ctx, rt.Typed, opts, w)
+	default:
+		return genericresource.Watch(ctx, rt, resourceName, opts, w)
+	}
 }

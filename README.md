@@ -6,6 +6,7 @@ A lightweight Kubernetes command-line tool focused on high-signal workflows, cle
 
 - Verb-oriented CLI foundation (`valley get ...`)
 - Operational read workflows: `describe`, `logs`, `events`, `top`
+- Watch support for selected workflows (`get --watch`, `events --watch`, `logs --follow`)
 - Configurable kube context selection with current-context fallback
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
 - List pods in any Kubernetes namespace
@@ -17,6 +18,7 @@ A lightweight Kubernetes command-line tool focused on high-signal workflows, cle
 - Limit/paginate list requests with API-native list options
 - Multiple output formats (text, wide, JSON, YAML, name)
 - Configurable timeout for API requests
+- Discovery refresh fallback for stale API mappings
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
 - Support for custom kubeconfig paths
 - Falls back to in-cluster ServiceAccount auth when no kubeconfig is available
@@ -99,6 +101,7 @@ go run ./cmd/valley get pods -n <your-namespace>
 |------|-------------|---------|
 | `-namespace`, `-n` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
 | `-all-namespaces`, `-A` | Query resources across all namespaces | `false` |
+| `-watch`, `-w` | Watch for changes after listing resources (text output) | `false` |
 | `-selector`, `-l` | Label selector used to filter resources | None |
 | `-field-selector` | Field selector used to filter resources | None |
 | `-limit` | Maximum number of resources to return | `0` (no limit) |
@@ -172,6 +175,13 @@ Pods: 5
 
 ```bash
 ./valley get pods -A -o wide
+```
+
+#### Watch resource changes
+
+```bash
+./valley get pods -n production --watch
+./valley events -n production --watch
 ```
 
 #### Limit results and continue pagination

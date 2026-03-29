@@ -84,16 +84,14 @@ func runTop(args []string, stdout, stderr io.Writer) int {
 		Context:        kubeCtx,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", err)
+		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", kube.FormatRuntimeInitError(err, kube.ConfigRef{
+			KubeconfigPath: kubeconfig,
+			Context:        kubeCtx,
+		}))
 		return 1
 	}
 
-	namespace := opts.Namespace
-	if opts.AllNamespaces {
-		namespace = metav1.NamespaceAll
-	} else if namespace == "" {
-		namespace = rt.EffectiveNamespace
-	}
+	namespace := resolveNamespaceOrDefault(rt, opts.Namespace, opts.AllNamespaces)
 
 	summary, err := collectTopSummary(ctx, rt, namespace, opts.LabelSelector)
 	if err != nil {

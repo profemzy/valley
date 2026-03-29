@@ -75,13 +75,14 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 		Context:        kubeCtx,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", err)
+		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", kube.FormatRuntimeInitError(err, kube.ConfigRef{
+			KubeconfigPath: kubeconfig,
+			Context:        kubeCtx,
+		}))
 		return 1
 	}
 
-	if !allNamespace && namespace == "" {
-		namespace = rt.EffectiveNamespace
-	}
+	namespace = resolveNamespaceOrDefault(rt, namespace, allNamespace)
 
 	if err := describeResource(ctx, rt, resourceName, targetName, namespace, allNamespace, output, stdout); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -176,22 +177,18 @@ type genericResolved struct {
 }
 
 func resolveGenericResource(rt *kube.Runtime, resourceName string) (genericResolved, error) {
-	gvr, err := rt.Mapper.ResourceFor(schema.GroupVersionResource{Resource: resourceName})
+	resolved, err := rt.ResolveResource(resourceName)
 	if err != nil {
-		return genericResolved{}, fmt.Errorf("unsupported resource %q: %w", resourceName, err)
+		return genericResolved{}, err
 	}
-	gvk, err := rt.Mapper.KindFor(gvr)
-	if err != nil {
-		return genericResolved{}, fmt.Errorf("failed to resolve kind for resource %q: %w", resourceName, err)
-	}
-	resources, err := rt.Discovery.ServerResourcesForGroupVersion(gvr.GroupVersion().String())
+	resources, err := rt.Discovery.ServerResourcesForGroupVersion(resolved.GVR.GroupVersion().String())
 	if err != nil {
 		return genericResolved{}, fmt.Errorf("failed discovery for resource %q: %w", resourceName, err)
 	}
 
 	for _, r := range resources.APIResources {
-		if r.Name == gvr.Resource {
-			return genericResolved{GVR: gvr, GVK: gvk, Mapping: &r}, nil
+		if r.Name == resolved.GVR.Resource {
+			return genericResolved{GVR: resolved.GVR, GVK: resolved.GVK, Mapping: &r}, nil
 		}
 	}
 

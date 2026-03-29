@@ -233,3 +233,16 @@ func TestRunGetRejectsNegativeLimit(t *testing.T) {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
 	}
 }
+
+func TestRunGetWatchRejectsNonTextOutput(t *testing.T) {
+	err := runGetWatch(context.Background(), &kube.Runtime{}, "pods", resourcecommon.QueryOptions{
+		Watch:  true,
+		Output: "json",
+	}, &strings.Builder{})
+	if err == nil {
+		t.Fatal("expected watch non-text output error")
+	}
+	if !strings.Contains(err.Error(), "only text output") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 
 	"valley/internal/kube"
 	resourcecommon "valley/internal/resources/common"
@@ -55,25 +56,15 @@ func Get(ctx context.Context, rt *kube.Runtime, resourceName string, opts resour
 }
 
 func Resolve(rt *kube.Runtime, resourceName string) (Resolved, error) {
-	gvr, err := rt.Mapper.ResourceFor(schema.GroupVersionResource{Resource: resourceName})
+	resolved, err := rt.ResolveResource(resourceName)
 	if err != nil {
-		return Resolved{}, fmt.Errorf("unsupported resource %q: %w", resourceName, err)
-	}
-
-	gvk, err := rt.Mapper.KindFor(gvr)
-	if err != nil {
-		return Resolved{}, fmt.Errorf("failed to resolve kind for resource %q: %w", resourceName, err)
-	}
-
-	mapping, err := rt.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	if err != nil {
-		return Resolved{}, fmt.Errorf("failed to resolve mapping for resource %q: %w", resourceName, err)
+		return Resolved{}, err
 	}
 
 	return Resolved{
-		GVR:     gvr,
-		GVK:     gvk,
-		Mapping: mapping,
+		GVR:     resolved.GVR,
+		GVK:     resolved.GVK,
+		Mapping: resolved.Mapping,
 	}, nil
 }
 
@@ -101,6 +92,78 @@ func list(ctx context.Context, rt *kube.Runtime, resolved Resolved, opts resourc
 		Limit:         opts.Limit,
 		Continue:      opts.Continue,
 	})
+}
+
+func Watch(ctx context.Context, rt *kube.Runtime, resourceName string, opts resourcecommon.QueryOptions, w io.Writer) error {
+	if rt.Dynamic == nil || rt.Mapper == nil {
+		return fmt.Errorf("generic resource access is not configured")
+	}
+
+	resolved, err := Resolve(rt, resourceName)
+	if err != nil {
+		return err
+	}
+
+	resourceClient := rt.Dynamic.Resource(resolved.GVR)
+	listOpts := metav1.ListOptions{
+		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
+		Watch:         true,
+	}
+
+	var stream watch.Interface
+	if resolved.Mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		namespace := opts.Namespace
+		if opts.AllNamespaces {
+			namespace = metav1.NamespaceAll
+		}
+		if err := ensureNamespacedScope(namespace, opts.AllNamespaces); err != nil {
+			return err
+		}
+		stream, err = resourceClient.Namespace(namespace).Watch(ctx, listOpts)
+	} else {
+		stream, err = resourceClient.Watch(ctx, listOpts)
+	}
+	if err != nil {
+		return err
+	}
+	defer stream.Stop()
+
+	kind := strings.ToLower(resolved.GVK.Kind)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case ev, ok := <-stream.ResultChan():
+			if !ok {
+				return nil
+			}
+			if ev.Type == watch.Error {
+				return fmt.Errorf("watch stream returned error event")
+			}
+			obj, ok := ev.Object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			target := obj.GetName()
+			if ns := strings.TrimSpace(obj.GetNamespace()); ns != "" {
+				target = ns + "/" + target
+			}
+			if _, err := fmt.Fprintf(w, "%s %s %s\n", strings.ToUpper(string(ev.Type)), kind, target); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func ensureNamespacedScope(namespace string, allNamespaces bool) error {
+	if allNamespaces {
+		return nil
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	return nil
 }
 
 func printText(w io.Writer, resolved Resolved, items []unstructured.Unstructured, wide bool) error {

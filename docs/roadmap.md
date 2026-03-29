@@ -62,16 +62,16 @@ Goal: move from inventory-style commands to operational workflows.
 Goal: make runtime/discovery robust across larger and diverse clusters.
 
 ### Planned work
-- [ ] Improve cached discovery strategy
-- [ ] Improve REST mapping refresh behavior
-- [ ] Improve cluster-scoped resource handling
-- [ ] Clean up namespace/defaulting policy across verbs
-- [ ] Add watch support for selected verbs/resources
-- [ ] Improve error messaging around auth, missing API groups, and context mistakes
+- [x] Improve cached discovery strategy
+- [x] Improve REST mapping refresh behavior
+- [x] Improve cluster-scoped resource handling
+- [x] Clean up namespace/defaulting policy across verbs
+- [x] Add watch support for selected verbs/resources
+- [x] Improve error messaging around auth, missing API groups, and context mistakes
 
 ### Exit criteria
-- [ ] Discovery and mapping are resilient across clusters
-- [ ] Runtime behavior is explicit and testable
+- [x] Discovery and mapping are resilient across clusters
+- [x] Runtime behavior is explicit and testable
 
 ## AI Roadmap (Read-Only First)
 
@@ -137,6 +137,6 @@ Objective: add intelligence through internal tools, not direct client access.
 
 ## Next Up
 
-- [ ] Improve cached discovery strategy
-- [ ] Improve REST mapping refresh behavior
-- [ ] Improve cluster-scoped resource handling
+- [ ] Add watch support for more resources/verbs beyond current `get`/`events`
+- [ ] Add end-to-end smoke tests against disposable clusters
+- [ ] Start AI Phase 1 (`internal/ai` + read-only tool facade)

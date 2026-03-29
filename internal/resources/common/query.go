@@ -5,6 +5,7 @@ type QueryOptions struct {
 	LabelSelector string
 	FieldSelector string
 	AllNamespaces bool
+	Watch         bool
 	Limit         int64
 	Continue      string
 	Wide          bool

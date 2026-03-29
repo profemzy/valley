@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"valley/internal/kube"
 	resourcecommon "valley/internal/resources/common"
 	eventresource "valley/internal/resources/events"
@@ -58,6 +56,8 @@ func runEvents(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.Namespace, "n", "", "Kubernetes namespace to query")
 	fs.BoolVar(&opts.AllNamespaces, "all-namespaces", false, "Query resources across all namespaces")
 	fs.BoolVar(&opts.AllNamespaces, "A", false, "Query resources across all namespaces")
+	fs.BoolVar(&opts.Watch, "watch", false, "Watch for changes after listing events")
+	fs.BoolVar(&opts.Watch, "w", false, "Watch for changes after listing events")
 	fs.StringVar(&opts.LabelSelector, "selector", "", "Label selector to filter resources")
 	fs.StringVar(&opts.LabelSelector, "l", "", "Label selector to filter resources")
 	fs.StringVar(&opts.FieldSelector, "field-selector", "", "Field selector to filter resources")
@@ -90,15 +90,14 @@ func runEvents(args []string, stdout, stderr io.Writer) int {
 		Context:        kubeCtx,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", err)
+		fmt.Fprintf(stderr, "error: failed to initialize Kubernetes runtime: %v\n", kube.FormatRuntimeInitError(err, kube.ConfigRef{
+			KubeconfigPath: kubeconfig,
+			Context:        kubeCtx,
+		}))
 		return 1
 	}
 
-	if opts.AllNamespaces {
-		opts.Namespace = metav1.NamespaceAll
-	} else if opts.Namespace == "" {
-		opts.Namespace = rt.EffectiveNamespace
-	}
+	opts.Namespace = resolveNamespaceOrDefault(rt, opts.Namespace, opts.AllNamespaces)
 
 	if target != "" {
 		ref, parseErr := parseResourceRef(target)
@@ -132,6 +131,17 @@ func runEvents(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if opts.Watch {
+		if opts.Output != "text" {
+			fmt.Fprintln(stderr, "error: --watch currently supports only text output")
+			return 1
+		}
+		if err := eventresource.Watch(ctx, rt.Typed, opts, stdout); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+	}
+
 	return 0
 }
 
@@ -150,6 +160,8 @@ func printEventsUsage(w io.Writer) {
 	fmt.Fprintln(w, "        Kubernetes namespace to query")
 	fmt.Fprintln(w, "  -all-namespaces, -A")
 	fmt.Fprintln(w, "        Query resources across all namespaces")
+	fmt.Fprintln(w, "  -watch, -w")
+	fmt.Fprintln(w, "        Watch for changes after listing events")
 	fmt.Fprintln(w, "  -selector, -l string")
 	fmt.Fprintln(w, "        Label selector to filter resources")
 	fmt.Fprintln(w, "  -field-selector string")

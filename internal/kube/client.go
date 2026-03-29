@@ -3,6 +3,7 @@ package kube
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -109,6 +110,14 @@ func loadDefaultKubeconfig(ref ConfigRef) (clientcmd.ClientConfig, string, error
 
 	effectiveContext := rawConfig.CurrentContext
 	if ref.Context != "" {
+		if _, ok := rawConfig.Contexts[ref.Context]; !ok {
+			available := make([]string, 0, len(rawConfig.Contexts))
+			for name := range rawConfig.Contexts {
+				available = append(available, name)
+			}
+			sort.Strings(available)
+			return nil, "", fmt.Errorf("context %q does not exist in kubeconfig (available: %s)", ref.Context, strings.Join(available, ", "))
+		}
 		effectiveContext = ref.Context
 	}
 

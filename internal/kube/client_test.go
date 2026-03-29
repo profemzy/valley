@@ -166,6 +166,19 @@ func TestNewRuntimeDefaultsToCurrentContext(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeRejectsUnknownContextWithHelpfulMessage(t *testing.T) {
+	kubeconfigPath := writeMultiContextKubeconfig(t, t.TempDir())
+
+	_, err := NewRuntime(ConfigRef{KubeconfigPath: kubeconfigPath, Context: "does-not-exist"})
+	if err == nil {
+		t.Fatal("expected unknown context error")
+	}
+
+	if got := err.Error(); !containsAll(got, []string{"does-not-exist", "available:", "default", "staging"}) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeKubeconfig(t *testing.T, dir, namespace string) string {
 	t.Helper()
 
