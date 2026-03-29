@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -58,6 +59,101 @@ func (k *KubeReader) ListNamespaces(ctx context.Context, limit int64) ([]string,
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+func (k *KubeReader) SummarizeHealth(ctx context.Context, namespace string, allNamespaces bool) (HealthSnapshot, error) {
+	scope := namespace
+	if allNamespaces {
+		scope = metav1.NamespaceAll
+	}
+	if strings.TrimSpace(scope) == "" {
+		scope = k.Runtime.EffectiveNamespace
+	}
+
+	nodes, err := k.Runtime.Typed.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return HealthSnapshot{}, err
+	}
+
+	pods, err := k.Runtime.Typed.CoreV1().Pods(scope).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return HealthSnapshot{}, err
+	}
+
+	services, err := k.Runtime.Typed.CoreV1().Services(scope).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return HealthSnapshot{}, err
+	}
+
+	deployments, err := k.Runtime.Typed.AppsV1().Deployments(scope).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return HealthSnapshot{}, err
+	}
+
+	warnings, err := k.Runtime.Typed.CoreV1().Events(scope).List(ctx, metav1.ListOptions{
+		FieldSelector: "type=Warning",
+	})
+	if err != nil {
+		return HealthSnapshot{}, err
+	}
+
+	readyNodes := 0
+	for _, node := range nodes.Items {
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				readyNodes++
+				break
+			}
+		}
+	}
+
+	podPhases := map[string]int{}
+	for _, pod := range pods.Items {
+		phase := string(pod.Status.Phase)
+		if strings.TrimSpace(phase) == "" {
+			phase = "Unknown"
+		}
+		podPhases[phase]++
+	}
+
+	healthyDeployments := 0
+	unreadyDeployments := make([]string, 0)
+	for _, deployment := range deployments.Items {
+		desired := int32(1)
+		if deployment.Spec.Replicas != nil {
+			desired = *deployment.Spec.Replicas
+		}
+		if deployment.Status.ReadyReplicas >= desired && deployment.Status.AvailableReplicas >= desired {
+			healthyDeployments++
+			continue
+		}
+		target := deployment.Name + " ready=" +
+			strconv.Itoa(int(deployment.Status.ReadyReplicas)) + "/" +
+			strconv.Itoa(int(desired))
+		if scope == metav1.NamespaceAll {
+			target = deployment.Namespace + "/" + target
+		}
+		unreadyDeployments = append(unreadyDeployments, target)
+	}
+	sort.Strings(unreadyDeployments)
+
+	displayScope := scope
+	if scope == metav1.NamespaceAll {
+		displayScope = "all-namespaces"
+	}
+
+	return HealthSnapshot{
+		Scope:              displayScope,
+		NodesReady:         readyNodes,
+		NodesTotal:         len(nodes.Items),
+		PodsTotal:          len(pods.Items),
+		PodPhases:          podPhases,
+		ServicesTotal:      len(services.Items),
+		DeploymentsHealthy: healthyDeployments,
+		DeploymentsTotal:   len(deployments.Items),
+		UnreadyDeployments: unreadyDeployments,
+		WarningEvents:      len(warnings.Items),
+	}, nil
 }
 
 func (k *KubeReader) GetResource(ctx context.Context, ref ResourceRef) (map[string]any, error) {

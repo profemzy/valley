@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"valley/internal/ai/tools"
@@ -162,27 +163,34 @@ func (o *Orchestrator) Ask(ctx context.Context, req AskRequest) (AskResponse, er
 	if err != nil {
 		return AskResponse{}, err
 	}
-
-	scope := req.Namespace
-	if req.AllNamespaces {
-		scope = "all-namespaces"
-	}
-	if strings.TrimSpace(scope) == "" {
-		scope = "default-context-namespace"
+	health, err := o.Tools.SummarizeHealth(ctx, req.Namespace, req.AllNamespaces)
+	if err != nil {
+		return AskResponse{}, err
 	}
 
 	observed := []string{
 		fmt.Sprintf("context=%s", contextName),
 		fmt.Sprintf("server=%s", auth.Server),
-		fmt.Sprintf("scope=%s", scope),
+		fmt.Sprintf("scope=%s", health.Scope),
 		fmt.Sprintf("namespaces_sample=%s", strings.Join(namespaces, ", ")),
+		fmt.Sprintf("nodes_ready=%d/%d", health.NodesReady, health.NodesTotal),
+		fmt.Sprintf("deployments_healthy=%d/%d", health.DeploymentsHealthy, health.DeploymentsTotal),
+		fmt.Sprintf("pods_total=%d", health.PodsTotal),
+		fmt.Sprintf("services_total=%d", health.ServicesTotal),
+		fmt.Sprintf("warning_events=%d", health.WarningEvents),
+		fmt.Sprintf("pod_phases=%s", formatPhases(health.PodPhases)),
+	}
+	if len(health.UnreadyDeployments) > 0 {
+		observed = append(observed, "unready_deployments="+strings.Join(health.UnreadyDeployments, "; "))
 	}
 
 	systemPrompt := strings.Join([]string{
 		"You are Valley AI operating in read-only mode.",
 		"Use only the observed facts provided.",
+		"Provide concrete, numeric summaries first.",
 		"Clearly separate observed facts from suggestions.",
 		"Do not propose any write or mutating Kubernetes actions unless clearly marked as suggestion.",
+		"Keep the answer concise and avoid markdown tables.",
 	}, "\n")
 
 	userPrompt := fmt.Sprintf(
@@ -206,6 +214,22 @@ func (o *Orchestrator) Ask(ctx context.Context, req AskRequest) (AskResponse, er
 		Answer:    answer,
 		Observed:  observed,
 	}, nil
+}
+
+func formatPhases(phases map[string]int) string {
+	if len(phases) == 0 {
+		return "none"
+	}
+	keys := make([]string, 0, len(phases))
+	for k := range phases {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, phases[k]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func firstNonEmptyOrDash(value string) string {

@@ -14,6 +14,19 @@ func (fakeReader) ListContexts(ctx context.Context) ([]string, error) { return [
 func (fakeReader) ListNamespaces(ctx context.Context, limit int64) ([]string, error) {
 	return []string{"default"}, nil
 }
+func (fakeReader) SummarizeHealth(ctx context.Context, namespace string, allNamespaces bool) (tools.HealthSnapshot, error) {
+	return tools.HealthSnapshot{
+		Scope:              "default",
+		NodesReady:         2,
+		NodesTotal:         2,
+		PodsTotal:          3,
+		PodPhases:          map[string]int{"Running": 3},
+		ServicesTotal:      2,
+		DeploymentsHealthy: 1,
+		DeploymentsTotal:   1,
+		WarningEvents:      0,
+	}, nil
+}
 func (fakeReader) GetResource(ctx context.Context, ref tools.ResourceRef) (map[string]any, error) {
 	return map[string]any{"kind": "Pod"}, nil
 }

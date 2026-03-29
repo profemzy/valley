@@ -39,10 +39,24 @@ type AuthStatus struct {
 	ContextName string
 }
 
+type HealthSnapshot struct {
+	Scope              string
+	NodesReady         int
+	NodesTotal         int
+	PodsTotal          int
+	PodPhases          map[string]int
+	ServicesTotal      int
+	DeploymentsHealthy int
+	DeploymentsTotal   int
+	UnreadyDeployments []string
+	WarningEvents      int
+}
+
 type Reader interface {
 	CurrentContext(ctx context.Context) (string, error)
 	ListContexts(ctx context.Context) ([]string, error)
 	ListNamespaces(ctx context.Context, limit int64) ([]string, error)
+	SummarizeHealth(ctx context.Context, namespace string, allNamespaces bool) (HealthSnapshot, error)
 	GetResource(ctx context.Context, ref ResourceRef) (map[string]any, error)
 	DescribeResource(ctx context.Context, ref ResourceRef) (ResourceSummary, error)
 	ListEvents(ctx context.Context, ref ResourceRef, limit int64) ([]EventDigest, error)
