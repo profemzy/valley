@@ -43,19 +43,19 @@ Goal: make `get` useful for daily workflows before expanding verbs.
 Goal: move from inventory-style commands to operational workflows.
 
 ### Planned verbs
-- [ ] `valley describe <resource>`
-- [ ] `valley logs <target>`
-- [ ] `valley events [resource]`
-- [ ] `valley top` (or equivalent health views)
+- [x] `valley describe <resource>`
+- [x] `valley logs <target>`
+- [x] `valley events [resource]`
+- [x] `valley top` (or equivalent health views)
 
 ### Design constraints
-- [ ] Keep each verb routed through the same runtime/factory
-- [ ] Prefer typed handlers for richer output
-- [ ] Keep generic fallback where safe and meaningful
+- [x] Keep each verb routed through the same runtime/factory
+- [x] Prefer typed handlers for richer output
+- [x] Keep generic fallback where safe and meaningful
 
 ### Exit criteria
-- [ ] Cover the most common read-only debugging flows
-- [ ] Keep command structure simple and predictable
+- [x] Cover the most common read-only debugging flows
+- [x] Keep command structure simple and predictable
 
 ## Phase 3: Runtime and Discovery Hardening
 
@@ -137,4 +137,6 @@ Objective: add intelligence through internal tools, not direct client access.
 
 ## Next Up
 
-- [ ] Start `describe` verb
+- [ ] Improve cached discovery strategy
+- [ ] Improve REST mapping refresh behavior
+- [ ] Improve cluster-scoped resource handling

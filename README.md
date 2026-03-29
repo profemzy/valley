@@ -1,10 +1,11 @@
 # Valley
 
-A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley currently supports typed `get` workflows for pods, deployments, services, namespaces, nodes, and events, with a generic discovery fallback for other resources.
+A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley supports typed `get` workflows plus operational commands such as `describe`, `logs`, `events`, and `top`.
 
 ## Features
 
 - Verb-oriented CLI foundation (`valley get ...`)
+- Operational read workflows: `describe`, `logs`, `events`, `top`
 - Configurable kube context selection with current-context fallback
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
 - List pods in any Kubernetes namespace
@@ -65,6 +66,25 @@ go run ./cmd/valley get pods -n <your-namespace>
 
 # List a generic resource through discovery
 ./valley get configmaps -n kube-system
+```
+
+### Phase 2 Commands
+
+```bash
+# Describe a resource
+./valley describe deployment oluto-backend -n oluto
+
+# Stream logs from a pod or deployment
+./valley logs pod/oluto-backend-6759fc54bd-6hmxc -n oluto --tail 100
+./valley logs deployment/oluto-backend -n oluto --tail 50
+
+# Show events (optionally filtered by target)
+./valley events -n oluto
+./valley events deployment/oluto-backend -n oluto
+
+# Cluster health summary
+./valley top -n oluto
+./valley top -A -o json
 ```
 
 ### Current Resource Support
@@ -245,9 +265,13 @@ If your kubeconfig depends on one of those helpers and it is not present in the 
 valley/
 ├── cmd/
 │   └── valley/
+│       ├── describe.go       # `describe` command
+│       ├── events.go         # `events` command
 │       ├── get.go            # `get` subcommand wiring and shared flags
+│       ├── logs.go           # `logs` command
 │       ├── main.go           # CLI bootstrap
-│       └── root.go           # Root command dispatch
+│       ├── root.go           # Root command dispatch
+│       └── top.go            # `top` command
 ├── docs/
 │   └── roadmap.md            # Planned feature and architecture roadmap
 ├── internal/
