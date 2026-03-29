@@ -125,3 +125,31 @@ func TestListDefaultsDesiredReplicasToOne(t *testing.T) {
 		t.Fatalf("expected desired replicas to default to 1, got %d", deployments[0].Desired)
 	}
 }
+
+func TestListAllNamespaces(t *testing.T) {
+	replicas := int32(1)
+	client := fake.NewSimpleClientset(
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-a", Namespace: "team-a"},
+			Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-b", Namespace: "team-b"},
+			Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		},
+	)
+
+	deployments, err := List(context.Background(), client, resourcecommon.QueryOptions{
+		AllNamespaces: true,
+	})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	if len(deployments) != 2 {
+		t.Fatalf("expected 2 deployments, got %d", len(deployments))
+	}
+	if deployments[0].Namespace != "team-a" || deployments[1].Namespace != "team-b" {
+		t.Fatalf("expected cross-namespace sort order, got %#v", deployments)
+	}
+}

@@ -9,8 +9,9 @@ A lightweight Kubernetes command-line tool focused on high-signal workflows, cle
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
 - List pods in any Kubernetes namespace
 - List deployments in any Kubernetes namespace
-- Filter resources with Kubernetes label selectors
-- Multiple output formats (text, JSON)
+- Filter resources with Kubernetes label and field selectors
+- Query resources across all namespaces
+- Multiple output formats (text, wide, JSON, YAML, name)
 - Configurable timeout for API requests
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
 - Support for custom kubeconfig paths
@@ -74,10 +75,12 @@ go run ./cmd/valley get pods -n <your-namespace>
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-namespace`, `-n` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
+| `-all-namespaces`, `-A` | Query resources across all namespaces | `false` |
 | `-selector`, `-l` | Label selector used to filter resources | None |
+| `-field-selector` | Field selector used to filter resources | None |
 | `-context` | Kubeconfig context to use | Current kubeconfig context |
 | `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
-| `-output`, `-o` | Output format (`text` or `json`) | `text` |
+| `-output`, `-o` | Output format (`text`, `wide`, `json`, `yaml`, `name`) | `text` |
 | `-timeout` | Timeout for API requests | `15s` |
 
 ### Examples
@@ -132,6 +135,18 @@ Pods: 5
 
 ```bash
 ./valley get pods -n production -l app=api
+```
+
+#### Filter pods by field selector
+
+```bash
+./valley get pods -n production --field-selector status.phase=Running
+```
+
+#### Query across all namespaces
+
+```bash
+./valley get pods -A -o wide
 ```
 
 #### Use a specific kube context

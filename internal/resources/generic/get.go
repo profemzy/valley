@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,9 +42,13 @@ func Get(ctx context.Context, rt *kube.Runtime, resourceName string, opts resour
 
 	switch opts.Output {
 	case "text":
-		return printText(w, resolved, list.Items)
+		return printText(w, resolved, list.Items, opts.Wide)
 	case "json":
 		return resourcecommon.PrintJSON(w, list.Items)
+	case "yaml":
+		return resourcecommon.PrintYAML(w, list.Items)
+	case "name":
+		return printName(w, resolved, list.Items)
 	default:
 		return fmt.Errorf("unsupported format: %s", opts.Output)
 	}
@@ -73,24 +80,26 @@ func Resolve(rt *kube.Runtime, resourceName string) (Resolved, error) {
 func list(ctx context.Context, rt *kube.Runtime, resolved Resolved, opts resourcecommon.QueryOptions) (*unstructured.UnstructuredList, error) {
 	resourceClient := rt.Dynamic.Resource(resolved.Mapping.Resource)
 	if resolved.Mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		if opts.Namespace == "" {
+		namespace := opts.Namespace
+		if opts.AllNamespaces {
+			namespace = metav1.NamespaceAll
+		}
+		if !opts.AllNamespaces && namespace == "" {
 			return nil, fmt.Errorf("namespace is required")
 		}
-		return resourceClient.Namespace(opts.Namespace).List(ctx, metav1.ListOptions{
+		return resourceClient.Namespace(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: opts.LabelSelector,
+			FieldSelector: opts.FieldSelector,
 		})
 	}
 
 	return resourceClient.List(ctx, metav1.ListOptions{
 		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
 	})
 }
 
-func printText(w io.Writer, resolved Resolved, items []unstructured.Unstructured) error {
-	if _, err := fmt.Fprintf(w, "%s: %d\n", resolved.GVR.Resource, len(items)); err != nil {
-		return err
-	}
-
+func printText(w io.Writer, resolved Resolved, items []unstructured.Unstructured, wide bool) error {
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].GetNamespace() != items[j].GetNamespace() {
 			return items[i].GetNamespace() < items[j].GetNamespace()
@@ -98,17 +107,83 @@ func printText(w io.Writer, resolved Resolved, items []unstructured.Unstructured
 		return items[i].GetName() < items[j].GetName()
 	})
 
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if wide {
+		if _, err := fmt.Fprintln(tw, "KIND\tNAMESPACE\tNAME\tAGE\tAPIVERSION"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(tw, "KIND\tNAMESPACE\tNAME\tAGE"); err != nil {
+			return err
+		}
+	}
+
 	kind := strings.ToLower(resolved.GVK.Kind)
+	now := time.Now()
 	for _, item := range items {
-		target := item.GetName()
-		if item.GetNamespace() != "" {
-			target = item.GetNamespace() + "/" + target
+		namespace := item.GetNamespace()
+		if namespace == "" {
+			namespace = "-"
 		}
 
-		if _, err := fmt.Fprintf(w, "  %s %s\n", kind, target); err != nil {
+		age := "-"
+		if ts := item.GetCreationTimestamp(); !ts.IsZero() {
+			age = formatAge(now.Sub(ts.Time))
+		}
+
+		if wide {
+			if _, err := fmt.Fprintf(
+				tw,
+				"%s\t%s\t%s\t%s\t%s\n",
+				kind,
+				namespace,
+				item.GetName(),
+				age,
+				item.GetAPIVersion(),
+			); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", kind, namespace, item.GetName(), age); err != nil {
+			return err
+		}
+	}
+
+	return tw.Flush()
+}
+
+func printName(w io.Writer, resolved Resolved, items []unstructured.Unstructured) error {
+	kind := strings.ToLower(resolved.GVK.Kind)
+	for _, item := range items {
+		name := kind + "/"
+		if namespace := strings.TrimSpace(item.GetNamespace()); namespace != "" {
+			name += namespace + "/"
+		}
+		name += item.GetName()
+
+		if _, err := fmt.Fprintln(w, name); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func formatAge(d time.Duration) string {
+	if d < 0 {
+		return "0s"
+	}
+	if d < time.Minute {
+		return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	}
+	if d < time.Hour {
+		return strconv.FormatInt(int64(d/time.Minute), 10) + "m"
+	}
+	if d < 24*time.Hour {
+		return strconv.FormatInt(int64(d/time.Hour), 10) + "h"
+	}
+
+	return strconv.FormatInt(int64(d/(24*time.Hour)), 10) + "d"
 }

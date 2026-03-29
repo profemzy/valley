@@ -37,9 +37,12 @@ func TestGetPrintsGenericTextForNamespacedResource(t *testing.T) {
 		t.Fatalf("Get returned error: %v", err)
 	}
 
-	const want = "configmaps: 1\n  configmap team-a/app-config\n"
-	if out.String() != want {
-		t.Fatalf("unexpected text output:\nwant:\n%s\ngot:\n%s", want, out.String())
+	got := out.String()
+	if !strings.Contains(got, "KIND") || !strings.Contains(got, "NAMESPACE") || !strings.Contains(got, "NAME") || !strings.Contains(got, "AGE") {
+		t.Fatalf("expected table headers in text output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "configmap") || !strings.Contains(got, "team-a") || !strings.Contains(got, "app-config") {
+		t.Fatalf("expected resource row in text output, got:\n%s", got)
 	}
 }
 
@@ -81,6 +84,69 @@ func TestGetRejectsMissingNamespaceForNamespacedResource(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "namespace is required") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetPrintsNameOutput(t *testing.T) {
+	rt := newGenericTestRuntime(t, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]any{
+				"name":      "app-config",
+				"namespace": "team-a",
+			},
+		},
+	})
+
+	var out bytes.Buffer
+	err := Get(context.Background(), rt, "configmaps", resourcecommon.QueryOptions{
+		Namespace: "team-a",
+		Output:    "name",
+	}, &out)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+
+	const want = "configmap/team-a/app-config\n"
+	if out.String() != want {
+		t.Fatalf("unexpected name output:\nwant:\n%s\ngot:\n%s", want, out.String())
+	}
+}
+
+func TestGetAllowsAllNamespacesForNamespacedResource(t *testing.T) {
+	rt := newGenericTestRuntime(t, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]any{
+				"name":      "app-config-a",
+				"namespace": "team-a",
+			},
+		},
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]any{
+				"name":      "app-config-b",
+				"namespace": "team-b",
+			},
+		},
+	})
+
+	var out bytes.Buffer
+	err := Get(context.Background(), rt, "configmaps", resourcecommon.QueryOptions{
+		AllNamespaces: true,
+		Output:        "text",
+	}, &out)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "team-a") || !strings.Contains(got, "team-b") {
+		t.Fatalf("expected both namespaces in output, got:\n%s", got)
 	}
 }
 

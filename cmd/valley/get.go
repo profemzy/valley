@@ -54,8 +54,11 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.Namespace, "n", "", "Kubernetes namespace to query")
 	fs.StringVar(&opts.LabelSelector, "selector", "", "Label selector to filter resources (for example: app=api)")
 	fs.StringVar(&opts.LabelSelector, "l", "", "Label selector to filter resources (for example: app=api)")
-	fs.StringVar(&opts.Output, "output", "text", "Output format (text, json)")
-	fs.StringVar(&opts.Output, "o", "text", "Output format (text, json)")
+	fs.StringVar(&opts.FieldSelector, "field-selector", "", "Field selector to filter resources (for example: status.phase=Running)")
+	fs.BoolVar(&opts.AllNamespaces, "all-namespaces", false, "Query resources across all namespaces")
+	fs.BoolVar(&opts.AllNamespaces, "A", false, "Query resources across all namespaces")
+	fs.StringVar(&opts.Output, "output", "text", "Output format (text, wide, json, yaml, name)")
+	fs.StringVar(&opts.Output, "o", "text", "Output format (text, wide, json, yaml, name)")
 	fs.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	fs.StringVar(&kubeCtx, "context", "", "Kubeconfig context to use")
 	fs.DurationVar(&timeout, "timeout", 15*time.Second, "Timeout for API requests")
@@ -67,6 +70,11 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: unexpected arguments: %s\n\n", strings.Join(fs.Args(), " "))
 		printGetUsage(stderr, newGetRegistry())
 		return 1
+	}
+
+	if opts.Output == "wide" {
+		opts.Wide = true
+		opts.Output = "text"
 	}
 
 	registry := newGetRegistry()
@@ -84,7 +92,9 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if opts.Namespace == "" {
+	if opts.AllNamespaces {
+		opts.Namespace = ""
+	} else if opts.Namespace == "" {
 		opts.Namespace = rt.EffectiveNamespace
 	}
 
@@ -111,6 +121,7 @@ func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "  valley get pods")
 	fmt.Fprintln(w, "  valley get pods -n kube-system")
 	fmt.Fprintln(w, "  valley get pods -l app=api -o json")
+	fmt.Fprintln(w, "  valley get pods -A -o wide")
 	fmt.Fprintln(w, "  valley get deployments -n backend")
 	fmt.Fprintln(w, "  valley get pods --context production")
 	fmt.Fprintln(w)
@@ -125,8 +136,12 @@ func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "        Kubernetes namespace to query")
 	fmt.Fprintln(w, "  -selector, -l string")
 	fmt.Fprintln(w, "        Label selector to filter resources")
+	fmt.Fprintln(w, "  -field-selector string")
+	fmt.Fprintln(w, "        Field selector to filter resources")
+	fmt.Fprintln(w, "  -all-namespaces, -A")
+	fmt.Fprintln(w, "        Query resources across all namespaces")
 	fmt.Fprintln(w, "  -output, -o string")
-	fmt.Fprintln(w, "        Output format (text, json)")
+	fmt.Fprintln(w, "        Output format (text, wide, json, yaml, name)")
 	fmt.Fprintln(w, "  -kubeconfig string")
 	fmt.Fprintln(w, "        Path to kubeconfig file")
 	fmt.Fprintln(w, "  -context string")

@@ -19,12 +19,18 @@ type Info struct {
 }
 
 func List(ctx context.Context, client kubernetes.Interface, opts resourcecommon.QueryOptions) ([]Info, error) {
-	if opts.Namespace == "" {
+	namespace := opts.Namespace
+	if opts.AllNamespaces {
+		namespace = metav1.NamespaceAll
+	}
+
+	if !opts.AllNamespaces && namespace == "" {
 		return nil, fmt.Errorf("namespace is required")
 	}
 
-	podList, err := client.CoreV1().Pods(opts.Namespace).List(ctx, metav1.ListOptions{
+	podList, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
 	})
 	if err != nil {
 		return nil, err

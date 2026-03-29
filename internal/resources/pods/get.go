@@ -20,7 +20,7 @@ func (getHandler) Get(ctx context.Context, rt *kube.Runtime, opts resourcecommon
 		return err
 	}
 
-	return Print(w, pods, opts.Output)
+	return Print(w, pods, opts)
 }
 
 var GetHandler resourcecommon.GetHandler = getHandler{}

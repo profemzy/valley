@@ -56,7 +56,7 @@ func TestRunGetUsesExplicitContextAndNamespace(t *testing.T) {
 	var stdout strings.Builder
 	var stderr strings.Builder
 
-	code := run([]string{"get", "widgets", "--context", "prod", "-n", "team-a", "-o", "json"}, &stdout, &stderr)
+	code := run([]string{"get", "widgets", "--context", "prod", "-n", "team-a", "-o", "json", "--field-selector", "status.phase=Running"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d: %s", code, stderr.String())
 	}
@@ -69,6 +69,9 @@ func TestRunGetUsesExplicitContextAndNamespace(t *testing.T) {
 	}
 	if gotOpts.Output != "json" {
 		t.Fatalf("expected output \"json\", got %q", gotOpts.Output)
+	}
+	if gotOpts.FieldSelector != "status.phase=Running" {
+		t.Fatalf("expected field selector to be propagated, got %q", gotOpts.FieldSelector)
 	}
 }
 
@@ -155,7 +158,51 @@ func TestRunGetFallsBackToGenericResource(t *testing.T) {
 		t.Fatalf("expected exit code 0, got %d: %s", code, stderr.String())
 	}
 
-	if stdout.String() != "configmaps: 1\n  configmap team-a/app-config\n" {
-		t.Fatalf("unexpected output:\n%s", stdout.String())
+	got := stdout.String()
+	if !strings.Contains(got, "KIND") || !strings.Contains(got, "NAMESPACE") || !strings.Contains(got, "NAME") || !strings.Contains(got, "AGE") {
+		t.Fatalf("expected generic table output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "configmap") || !strings.Contains(got, "team-a") || !strings.Contains(got, "app-config") {
+		t.Fatalf("expected configmap row in output, got:\n%s", got)
+	}
+}
+
+func TestRunGetWideOutputSetsWideTextMode(t *testing.T) {
+	originalNewRuntime := newRuntime
+	originalNewGetRegistry := newGetRegistry
+	t.Cleanup(func() {
+		newRuntime = originalNewRuntime
+		newGetRegistry = originalNewGetRegistry
+	})
+
+	var gotOpts resourcecommon.QueryOptions
+
+	newRuntime = func(ref kube.ConfigRef) (*kube.Runtime, error) {
+		return &kube.Runtime{EffectiveNamespace: "team-a"}, nil
+	}
+
+	newGetRegistry = func() *resourcecommon.Registry {
+		return resourcecommon.NewRegistry(testGetHandler{
+			name: "widgets",
+			run: func(ctx context.Context, rt *kube.Runtime, opts resourcecommon.QueryOptions, w io.Writer) error {
+				gotOpts = opts
+				return nil
+			},
+		})
+	}
+
+	var stdout strings.Builder
+	var stderr strings.Builder
+
+	code := run([]string{"get", "widgets", "-o", "wide"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d: %s", code, stderr.String())
+	}
+
+	if gotOpts.Output != "text" {
+		t.Fatalf("expected wide to normalize to text output, got %q", gotOpts.Output)
+	}
+	if !gotOpts.Wide {
+		t.Fatalf("expected wide flag to be enabled")
 	}
 }

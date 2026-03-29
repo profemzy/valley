@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	resourcecommon "valley/internal/resources/common"
 )
 
 func TestPrintText(t *testing.T) {
@@ -12,7 +14,7 @@ func TestPrintText(t *testing.T) {
 	err := Print(&out, []Info{
 		{Namespace: "team-a", Name: "api"},
 		{Namespace: "team-a", Name: "worker"},
-	}, "text")
+	}, resourcecommon.QueryOptions{Output: "text"})
 	if err != nil {
 		t.Fatalf("Print returned error: %v", err)
 	}
@@ -28,7 +30,7 @@ func TestPrintJSON(t *testing.T) {
 
 	err := Print(&out, []Info{
 		{Namespace: "team-a", Name: "api", Phase: "Running", IP: "10.0.0.1"},
-	}, "json")
+	}, resourcecommon.QueryOptions{Output: "json"})
 	if err != nil {
 		t.Fatalf("Print returned error: %v", err)
 	}
@@ -40,12 +42,29 @@ func TestPrintJSON(t *testing.T) {
 }
 
 func TestPrintRejectsUnsupportedFormat(t *testing.T) {
-	err := Print(&bytes.Buffer{}, nil, "yaml")
+	err := Print(&bytes.Buffer{}, nil, resourcecommon.QueryOptions{Output: "invalid"})
 	if err == nil {
 		t.Fatal("expected unsupported format error")
 	}
 
 	if !strings.Contains(err.Error(), "unsupported format") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrintName(t *testing.T) {
+	var out bytes.Buffer
+
+	err := Print(&out, []Info{
+		{Namespace: "team-a", Name: "api"},
+		{Name: "cluster-pod"},
+	}, resourcecommon.QueryOptions{Output: "name"})
+	if err != nil {
+		t.Fatalf("Print returned error: %v", err)
+	}
+
+	const want = "pod/team-a/api\npod/cluster-pod\n"
+	if out.String() != want {
+		t.Fatalf("unexpected name output:\nwant:\n%s\ngot:\n%s", want, out.String())
 	}
 }

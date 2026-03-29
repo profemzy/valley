@@ -29,9 +29,19 @@ Valley now has the core structural pieces needed for growth:
   - `pods`
   - `deployments`
 - Generic discovery-based fallback for `get <resource>`
+- `get` query options now include:
+  - label selectors
+  - field selectors
+  - `--all-namespaces`
+- `get` output formats now include:
+  - `text`
+  - `wide`
+  - `json`
+  - `yaml`
+  - `name`
 - Shared resource contracts kept intentionally small:
   - query options
-  - JSON formatting
+  - JSON/YAML formatting
   - handler registry
 
 This is the right base for breadth without forcing every resource into one weak abstraction.
@@ -52,7 +62,29 @@ This is the right base for breadth without forcing every resource into one weak 
 
 Goal: make `get` useful across more day-to-day workflows before expanding verbs.
 
-Planned work:
+Status as of March 28, 2026:
+
+- Completed:
+  - Improve generic fallback output:
+    - better default table views
+    - metadata columns such as namespace, age, and kind where available
+    - optional `-o wide`
+  - Add more output formats:
+    - `yaml`
+    - `name`
+  - Add common query options:
+    - `--all-namespaces`
+    - field selectors
+- Remaining:
+  - Add typed handlers for:
+    - `services`
+    - `namespaces`
+    - `nodes`
+    - `events`
+  - Add common query options:
+    - limit/pagination where practical
+
+Planned work (remaining):
 
 - Add typed handlers for:
   - `services`
@@ -246,8 +278,9 @@ As the feature set grows, test coverage should expand in parallel:
 
 ## Recommended Next Steps
 
-1. Improve generic `get` output so unknown resources are easier to read.
-2. Add typed `services` and `namespaces`.
-3. Add the `describe` verb.
-4. Stand up the internal AI package and read-only tool facade using `openai-go/v3`.
-5. Add `valley ai` only after the internal tools are stable enough to support it.
+1. Add typed `services` and `namespaces`.
+2. Add typed `nodes` and `events`.
+3. Add limit/pagination support where practical for `get`.
+4. Add the `describe` verb.
+5. Stand up the internal AI package and read-only tool facade using `openai-go/v3`.
+6. Add `valley ai` only after the internal tools are stable enough to support it.

@@ -92,3 +92,30 @@ func TestListRejectsEmptyNamespace(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestListAllNamespaces(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-a", Namespace: "team-a"},
+			Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-b", Namespace: "team-b"},
+			Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+		},
+	)
+
+	pods, err := List(context.Background(), client, resourcecommon.QueryOptions{
+		AllNamespaces: true,
+	})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	if len(pods) != 2 {
+		t.Fatalf("expected 2 pods, got %d", len(pods))
+	}
+	if pods[0].Namespace != "team-a" || pods[1].Namespace != "team-b" {
+		t.Fatalf("expected cross-namespace sort order, got %#v", pods)
+	}
+}
