@@ -2,3 +2,5 @@
 /valley
 .idea/
 .codex
+.opencode/
+opencode.jsonc
