@@ -56,7 +56,15 @@ func TestRunGetUsesExplicitContextAndNamespace(t *testing.T) {
 	var stdout strings.Builder
 	var stderr strings.Builder
 
-	code := run([]string{"get", "widgets", "--context", "prod", "-n", "team-a", "-o", "json", "--field-selector", "status.phase=Running"}, &stdout, &stderr)
+	code := run([]string{
+		"get", "widgets",
+		"--context", "prod",
+		"-n", "team-a",
+		"-o", "json",
+		"--field-selector", "status.phase=Running",
+		"--limit", "25",
+		"--continue", "next-token",
+	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d: %s", code, stderr.String())
 	}
@@ -72,6 +80,12 @@ func TestRunGetUsesExplicitContextAndNamespace(t *testing.T) {
 	}
 	if gotOpts.FieldSelector != "status.phase=Running" {
 		t.Fatalf("expected field selector to be propagated, got %q", gotOpts.FieldSelector)
+	}
+	if gotOpts.Limit != 25 {
+		t.Fatalf("expected limit 25, got %d", gotOpts.Limit)
+	}
+	if gotOpts.Continue != "next-token" {
+		t.Fatalf("expected continue token to be propagated, got %q", gotOpts.Continue)
 	}
 }
 
@@ -204,5 +218,18 @@ func TestRunGetWideOutputSetsWideTextMode(t *testing.T) {
 	}
 	if !gotOpts.Wide {
 		t.Fatalf("expected wide flag to be enabled")
+	}
+}
+
+func TestRunGetRejectsNegativeLimit(t *testing.T) {
+	var stdout strings.Builder
+	var stderr strings.Builder
+
+	code := run([]string{"get", "pods", "--limit", "-1"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid limit, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "--limit must be greater than or equal to 0") {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
 	}
 }

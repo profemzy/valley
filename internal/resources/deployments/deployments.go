@@ -34,6 +34,8 @@ func List(ctx context.Context, client kubernetes.Interface, opts resourcecommon.
 	deploymentList, err := client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: opts.LabelSelector,
 		FieldSelector: opts.FieldSelector,
+		Limit:         opts.Limit,
+		Continue:      opts.Continue,
 	})
 	if err != nil {
 		return nil, err

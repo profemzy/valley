@@ -31,6 +31,8 @@ func List(ctx context.Context, client kubernetes.Interface, opts resourcecommon.
 	podList, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: opts.LabelSelector,
 		FieldSelector: opts.FieldSelector,
+		Limit:         opts.Limit,
+		Continue:      opts.Continue,
 	})
 	if err != nil {
 		return nil, err

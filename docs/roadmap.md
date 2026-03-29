@@ -6,7 +6,7 @@ Legend:
 - `[x]` completed
 - `[ ]` planned / in progress
 
-Last updated: March 28, 2026
+Last updated: March 29, 2026
 
 ## Phase 1: Strengthen `get`
 
@@ -23,20 +23,20 @@ Goal: make `get` useful for daily workflows before expanding verbs.
 - [x] Add `--all-namespaces` / `-A`
 - [x] Add field selectors (`--field-selector`)
 - [x] Keep label selectors (`-l`, `--selector`) supported
-- [ ] Add limit/pagination where practical
+- [x] Add limit/pagination where practical
 
 ### Typed handlers
 - [x] `pods`
 - [x] `deployments`
-- [ ] `services`
-- [ ] `namespaces`
-- [ ] `nodes`
-- [ ] `events`
+- [x] `services`
+- [x] `namespaces`
+- [x] `nodes`
+- [x] `events`
 
 ### Exit criteria
-- [ ] `get` feels useful for common built-in resources
-- [ ] Generic fallback is good enough for unknown resources and CRDs
-- [ ] Typed handlers are used where richer UX clearly matters
+- [x] `get` feels useful for common built-in resources
+- [x] Generic fallback is good enough for unknown resources and CRDs
+- [x] Typed handlers are used where richer UX clearly matters
 
 ## Phase 2: Add More Verbs
 
@@ -120,11 +120,11 @@ Objective: add intelligence through internal tools, not direct client access.
 
 ## Testing
 
-- [x] Unit tests for current typed handlers (`pods`, `deployments`)
+- [x] Unit tests for current typed handlers (`pods`, `deployments`, `services`, `namespaces`, `nodes`, `events`)
 - [x] Unit tests for generic fallback behavior
 - [x] Runtime tests for kubeconfig/context selection
 - [x] Command-level tests for current `get` routing/flags
-- [ ] Unit tests for each new typed handler as added
+- [x] Unit tests for each new typed handler as added
 - [ ] AI tool tests independent of model output
 - [ ] End-to-end smoke tests against a disposable cluster
 
@@ -137,7 +137,4 @@ Objective: add intelligence through internal tools, not direct client access.
 
 ## Next Up
 
-- [ ] Add typed `services` and `namespaces`
-- [ ] Add typed `nodes` and `events`
-- [ ] Add pagination/limit support for `get`
 - [ ] Start `describe` verb

@@ -90,12 +90,16 @@ func list(ctx context.Context, rt *kube.Runtime, resolved Resolved, opts resourc
 		return resourceClient.Namespace(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: opts.LabelSelector,
 			FieldSelector: opts.FieldSelector,
+			Limit:         opts.Limit,
+			Continue:      opts.Continue,
 		})
 	}
 
 	return resourceClient.List(ctx, metav1.ListOptions{
 		LabelSelector: opts.LabelSelector,
 		FieldSelector: opts.FieldSelector,
+		Limit:         opts.Limit,
+		Continue:      opts.Continue,
 	})
 }
 

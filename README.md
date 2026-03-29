@@ -1,6 +1,6 @@
 # Valley
 
-A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley currently supports `get pods` and `get deployments` and is structured to grow into a broader `kubectl`-style interface.
+A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley currently supports typed `get` workflows for pods, deployments, services, namespaces, nodes, and events, with a generic discovery fallback for other resources.
 
 ## Features
 
@@ -9,8 +9,11 @@ A lightweight Kubernetes command-line tool focused on high-signal workflows, cle
 - Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
 - List pods in any Kubernetes namespace
 - List deployments in any Kubernetes namespace
+- List services in any Kubernetes namespace
+- List namespaces, nodes, and events
 - Filter resources with Kubernetes label and field selectors
 - Query resources across all namespaces
+- Limit/paginate list requests with API-native list options
 - Multiple output formats (text, wide, JSON, YAML, name)
 - Configurable timeout for API requests
 - Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
@@ -66,9 +69,9 @@ go run ./cmd/valley get pods -n <your-namespace>
 
 ### Current Resource Support
 
-- Typed handlers with resource-specific output: `pods`, `deployments`
+- Typed handlers with resource-specific output: `pods`, `deployments`, `services`, `namespaces`, `nodes`, `events`
 - Generic discovery fallback: any discoverable Kubernetes resource or CRD, for example `configmaps`, `secrets`, `ingresses`, or `httproutes`
-- Generic fallback currently uses a simple text view plus JSON output; richer typed output is added resource by resource
+- Generic fallback supports `text`, `wide`, `json`, `yaml`, and `name` output
 
 ### `get` Command Flags
 
@@ -78,6 +81,8 @@ go run ./cmd/valley get pods -n <your-namespace>
 | `-all-namespaces`, `-A` | Query resources across all namespaces | `false` |
 | `-selector`, `-l` | Label selector used to filter resources | None |
 | `-field-selector` | Field selector used to filter resources | None |
+| `-limit` | Maximum number of resources to return | `0` (no limit) |
+| `-continue` | Pagination continue token from previous list response | None |
 | `-context` | Kubeconfig context to use | Current kubeconfig context |
 | `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
 | `-output`, `-o` | Output format (`text`, `wide`, `json`, `yaml`, `name`) | `text` |
@@ -149,6 +154,13 @@ Pods: 5
 ./valley get pods -A -o wide
 ```
 
+#### Limit results and continue pagination
+
+```bash
+./valley get pods -n production --limit 50
+./valley get pods -n production --limit 50 --continue <next-token>
+```
+
 #### Use a specific kube context
 
 ```bash
@@ -199,8 +211,8 @@ Deployments: 2
 
 **Generic text output example:**
 ```
-configmaps: 1
-  configmap oluto/app-config
+KIND       NAMESPACE  NAME        AGE
+configmap  oluto      app-config  2d
 ```
 
 ## Docker
@@ -211,7 +223,7 @@ configmaps: 1
 docker build -t valley .
 ```
 
-The Dockerfile builds the binary for the target platform and defaults to `linux/amd64` for a plain local `docker build`.
+The Dockerfile builds the binary for the target platform selected by Docker (`--platform`), using the local Docker default when not explicitly set.
 
 ### Run with a mounted kubeconfig
 
@@ -243,20 +255,36 @@ valley/
 │   │   └── client.go         # Runtime initialization, discovery, and kubeconfig resolution
 │   └── resources/
 │       ├── common/
-│       │   ├── output.go     # Shared JSON formatting helpers
+│       │   ├── output.go     # Shared JSON/YAML formatting helpers
 │       │   ├── query.go      # Shared query options for resource handlers
 │       │   └── registry.go   # Resource registry for verb handlers
 │       ├── deployments/
 │       │   ├── get.go        # `get deployments` handler
 │       │   ├── output.go     # Deployment-specific output formatting
 │       │   └── deployments.go # Deployment-specific query and mapping logic
+│       ├── events/
+│       │   ├── get.go        # `get events` handler
+│       │   ├── output.go     # Event-specific output formatting
+│       │   └── events.go     # Event-specific query and mapping logic
 │       ├── generic/
 │       │   ├── get.go        # Generic discovery-based `get` fallback
 │       │   └── get_test.go   # Generic fallback tests
-│       └── pods/
-│           ├── get.go        # `get pods` handler
-│           ├── output.go     # Pod-specific output formatting
-│           └── pods.go       # Pod-specific query and mapping logic
+│       ├── namespaces/
+│       │   ├── get.go        # `get namespaces` handler
+│       │   ├── output.go     # Namespace-specific output formatting
+│       │   └── namespaces.go # Namespace-specific query and mapping logic
+│       ├── nodes/
+│       │   ├── get.go        # `get nodes` handler
+│       │   ├── output.go     # Node-specific output formatting
+│       │   └── nodes.go      # Node-specific query and mapping logic
+│       ├── pods/
+│       │   ├── get.go        # `get pods` handler
+│       │   ├── output.go     # Pod-specific output formatting
+│       │   └── pods.go       # Pod-specific query and mapping logic
+│       └── services/
+│           ├── get.go        # `get services` handler
+│           ├── output.go     # Service-specific output formatting
+│           └── services.go   # Service-specific query and mapping logic
 ├── go.mod
 ├── go.sum
 └── README.md
@@ -284,7 +312,7 @@ valley/
 
 ## Roadmap
 
-The next planned features and architecture milestones live in [docs/roadmap.md](/home/profemzy/projects/valley/docs/roadmap.md).
+The next planned features and architecture milestones live in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Development
 
