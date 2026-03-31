@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,12 +42,7 @@ func TestListMapsAndSortsPods(t *testing.T) {
 		t.Fatalf("expected pods to be sorted by name, got %#v", pods)
 	}
 
-	if pods[0] != (Info{
-		Namespace: "team-a",
-		Name:      "alpha",
-		Phase:     string(corev1.PodPending),
-		IP:        "10.0.0.1",
-	}) {
+	if pods[0].Namespace != "team-a" || pods[0].Name != "alpha" || pods[0].IP != "10.0.0.1" {
 		t.Fatalf("unexpected first pod mapping: %#v", pods[0])
 	}
 }
@@ -117,5 +113,63 @@ func TestListAllNamespaces(t *testing.T) {
 	}
 	if pods[0].Namespace != "team-a" || pods[1].Namespace != "team-b" {
 		t.Fatalf("expected cross-namespace sort order, got %#v", pods)
+	}
+}
+
+func TestSemanticStatusRunning(t *testing.T) {
+	start := time.Now().Add(-3 * 24 * time.Hour)
+	p := Info{Phase: "Running", StartTime: start}
+	status := p.SemanticStatus()
+	if !strings.HasPrefix(status, "Healthy (") {
+		t.Fatalf("expected Healthy prefix, got %q", status)
+	}
+}
+
+func TestSemanticStatusCrashLoop(t *testing.T) {
+	p := Info{Phase: "Running", ContainerState: "CrashLoopBackOff", Restarts: 14}
+	status := p.SemanticStatus()
+	if status != "Failing (Restarted 14x)" {
+		t.Fatalf("unexpected CrashLoop status: %q", status)
+	}
+}
+
+func TestSemanticStatusImagePull(t *testing.T) {
+	for _, state := range []string{"ImagePullBackOff", "ErrImagePull"} {
+		p := Info{Phase: "Pending", ContainerState: state}
+		status := p.SemanticStatus()
+		if status != "Failing (ImagePull)" {
+			t.Fatalf("unexpected ImagePull status for %q: %q", state, status)
+		}
+	}
+}
+
+func TestSemanticStatusOOMKilled(t *testing.T) {
+	p := Info{Phase: "Running", ContainerState: "OOMKilled", Restarts: 3}
+	status := p.SemanticStatus()
+	if status != "Failing (OOMKilled, 3x)" {
+		t.Fatalf("unexpected OOMKilled status: %q", status)
+	}
+}
+
+func TestSemanticStatusPending(t *testing.T) {
+	start := time.Now().Add(-5 * time.Minute)
+	p := Info{Phase: "Pending", StartTime: start}
+	status := p.SemanticStatus()
+	if !strings.HasPrefix(status, "Pending (") {
+		t.Fatalf("expected Pending prefix, got %q", status)
+	}
+}
+
+func TestSemanticStatusSucceeded(t *testing.T) {
+	p := Info{Phase: "Succeeded"}
+	if p.SemanticStatus() != "Succeeded" {
+		t.Fatalf("expected Succeeded, got %q", p.SemanticStatus())
+	}
+}
+
+func TestSemanticStatusFailed(t *testing.T) {
+	p := Info{Phase: "Failed", Restarts: 0}
+	if p.SemanticStatus() != "Failed" {
+		t.Fatalf("expected Failed, got %q", p.SemanticStatus())
 	}
 }

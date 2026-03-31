@@ -44,7 +44,12 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	resourceName := args[0]
+	// Resolve natural-language aliases before flag parsing. The alias result
+	// is stored separately and applied AFTER fs.Parse so explicit user flags
+	// always win over alias-injected defaults.
+	alias := resolveGetAlias(args)
+	resourceName := alias.Resource
+	args = alias.Args
 
 	var (
 		opts       resourcecommon.QueryOptions
@@ -91,6 +96,20 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 	if opts.Output == "wide" {
 		opts.Wide = true
 		opts.Output = "text"
+	}
+
+	// Apply alias overrides only for fields the user did not explicitly set.
+	// A user-supplied -n flag takes precedence over the alias's AllNamespaces default.
+	if alias.Matched {
+		if alias.AllNamespaces && !opts.AllNamespaces && opts.Namespace == "" {
+			opts.AllNamespaces = true
+		}
+		if alias.FieldSelector != "" && opts.FieldSelector == "" {
+			opts.FieldSelector = alias.FieldSelector
+		}
+		if alias.SemanticFilter != "" && opts.SemanticFilter == "" {
+			opts.SemanticFilter = alias.SemanticFilter
+		}
 	}
 
 	registry := newGetRegistry()
@@ -143,6 +162,7 @@ func runGet(args []string, stdout, stderr io.Writer) int {
 func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  valley get <resource> [flags]")
+	fmt.Fprintln(w, "  valley get <phrase>   [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Examples:")
 	fmt.Fprintln(w, "  valley get pods")
@@ -151,6 +171,14 @@ func printGetUsage(w io.Writer, registry *resourcecommon.Registry) {
 	fmt.Fprintln(w, "  valley get pods -A -o wide")
 	fmt.Fprintln(w, "  valley get deployments -n backend")
 	fmt.Fprintln(w, "  valley get pods --context production")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Natural Language Aliases:")
+	fmt.Fprintln(w, "  valley get failing pods")
+	fmt.Fprintln(w, "  valley get failing pods -n backend")
+	fmt.Fprintln(w, "  valley get all failing pods")
+	fmt.Fprintln(w, "  valley get pending pods")
+	fmt.Fprintln(w, "  valley get warning events -n production")
+	fmt.Fprintln(w, "  valley get warning events across all namespaces")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Available Resources:")
 	for _, name := range registry.PrimaryNames() {

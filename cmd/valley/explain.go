@@ -52,6 +52,7 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 		namespace    string
 		allNamespace bool
 		includeLogs  bool
+		analyse      bool
 		output       string
 		kubeconfig   string
 		kubeCtx      string
@@ -65,12 +66,13 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&namespace, "n", "", "Kubernetes namespace to query")
 	fs.BoolVar(&allNamespace, "all-namespaces", false, "Search across all namespaces")
 	fs.BoolVar(&allNamespace, "A", false, "Search across all namespaces")
-	fs.BoolVar(&includeLogs, "include-logs", false, "Include a logs check for pod targets")
+	fs.BoolVar(&includeLogs, "include-logs", false, "Include recent logs in the analysis")
+	fs.BoolVar(&analyse, "analyse", false, "Use AI to analyse pod health and misconfigurations")
 	fs.StringVar(&output, "output", "text", "Output format (text, json, yaml)")
 	fs.StringVar(&output, "o", "text", "Output format (text, json, yaml)")
 	fs.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	fs.StringVar(&kubeCtx, "context", "", "Kubeconfig context to use")
-	fs.DurationVar(&timeout, "timeout", 20*time.Second, "Timeout for API requests")
+	fs.DurationVar(&timeout, "timeout", 60*time.Second, "Timeout for API requests")
 
 	if err := fs.Parse(args[argOffset:]); err != nil {
 		return 2
@@ -96,12 +98,57 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 
 	namespace = resolveNamespaceOrDefault(rt, namespace, allNamespace)
 
-	orch := ai.NewOrchestrator(
-		tools.NewKubeReader(rt),
-		ai.NewSessionStore(),
-		ai.NoopClient{},
-	)
+	reader := tools.NewKubeReader(rt)
+	sessions := ai.NewSessionStore()
 
+	// --analyse: use real AI client for deep analysis
+	if analyse {
+		aiClient, err := ai.NewClientFromEnv()
+		if err != nil {
+			fmt.Fprintf(stderr, "error: AI is not configured: %v\n", err)
+			fmt.Fprintln(stderr, "hint: set VALLEY_AI_API_KEY in your environment or .env file")
+			return 1
+		}
+
+		fmt.Fprintln(stdout, "Analysing pod with AI...")
+		orch := ai.NewOrchestrator(reader, sessions, aiClient)
+		response, err := orch.Analyse(ctx, ai.AnalyseRequest{
+			Resource:      resourceName,
+			Name:          targetName,
+			Namespace:     namespace,
+			AllNamespaces: allNamespace,
+			IncludeLogs:   includeLogs,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+
+		switch output {
+		case "text":
+			if err := printAnalyseText(stdout, response); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "json":
+			if err := resourcecommon.PrintJSON(stdout, response); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "yaml":
+			if err := resourcecommon.PrintYAML(stdout, response); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		default:
+			fmt.Fprintf(stderr, "error: unsupported format: %s\n", output)
+			return 1
+		}
+		return 0
+	}
+
+	// Default: deterministic explain (no LLM)
+	orch := ai.NewOrchestrator(reader, sessions, ai.NoopClient{})
 	response, err := orch.Explain(ctx, ai.ExplainRequest{
 		Resource:      resourceName,
 		Name:          targetName,
@@ -189,23 +236,34 @@ func printExplainText(w io.Writer, response ai.ExplainResponse) error {
 	return nil
 }
 
+func printAnalyseText(w io.Writer, response ai.AnalyseResponse) error {
+	fmt.Fprintf(w, "\nTarget:  %s\n", response.Target)
+	fmt.Fprintf(w, "Context: %s\n", response.Context)
+	fmt.Fprintln(w, strings.Repeat("-", 60))
+	fmt.Fprintln(w, response.Analysis)
+	return nil
+}
+
 func printExplainUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  valley explain <resource>/<name> [flags]")
 	fmt.Fprintln(w, "  valley explain <resource> <name> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Examples:")
-	fmt.Fprintln(w, "  valley explain pod/oluto-backend-6759fc54bd-6hmxc -n oluto")
-	fmt.Fprintln(w, "  valley explain deployment oluto-backend -n oluto")
-	fmt.Fprintln(w, "  valley explain pod/oluto-backend-6759fc54bd-6hmxc -n oluto --include-logs")
+	fmt.Fprintln(w, "  valley explain pod/api-7d9f77b4c5-8kmbz -n backend")
+	fmt.Fprintln(w, "  valley explain pod/api-7d9f77b4c5-8kmbz -n backend --analyse")
+	fmt.Fprintln(w, "  valley explain pod/api-7d9f77b4c5-8kmbz -n backend --analyse --include-logs")
+	fmt.Fprintln(w, "  valley explain deployment api -n backend")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  -namespace, -n string")
 	fmt.Fprintln(w, "        Kubernetes namespace to query")
 	fmt.Fprintln(w, "  -all-namespaces, -A")
 	fmt.Fprintln(w, "        Search across all namespaces")
+	fmt.Fprintln(w, "  -analyse")
+	fmt.Fprintln(w, "        Use AI to analyse pod health, misconfigurations, and root cause (requires VALLEY_AI_API_KEY)")
 	fmt.Fprintln(w, "  -include-logs")
-	fmt.Fprintln(w, "        Include a logs check for pod targets")
+	fmt.Fprintln(w, "        Include recent pod logs in the AI analysis (use with --analyse)")
 	fmt.Fprintln(w, "  -output, -o string")
 	fmt.Fprintln(w, "        Output format (text, json, yaml)")
 	fmt.Fprintln(w, "  -kubeconfig string")
@@ -213,5 +271,5 @@ func printExplainUsage(w io.Writer) {
 	fmt.Fprintln(w, "  -context string")
 	fmt.Fprintln(w, "        Kubeconfig context to use")
 	fmt.Fprintln(w, "  -timeout duration")
-	fmt.Fprintln(w, "        Timeout for API requests")
+	fmt.Fprintln(w, "        Timeout for API requests (default 60s)")
 }

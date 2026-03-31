@@ -1,104 +1,56 @@
 # Valley
 
-A lightweight Kubernetes command-line tool focused on high-signal workflows, clear output, and an easier path to intelligent cluster operations. Built with the official Kubernetes Go client (`client-go`), Valley supports typed `get` workflows plus operational commands such as `describe`, `logs`, `events`, `top`, and `explain`.
+A workflow-centric, context-aware Kubernetes intelligence tool. Valley is not another `kubectl` wrapper — it focuses on **correlated troubleshooting, high-signal output, and AI-driven root-cause analysis**, so you spend less time running commands and more time fixing problems.
 
-## Features
+Built with the official Kubernetes Go client (`client-go`) and an OpenAI-compatible AI backend.
 
-- Verb-oriented CLI foundation (`valley get ...`)
-- Operational read workflows: `describe`, `logs`, `events`, `top`, `explain`
-- AI troubleshooting command: `ai` (OpenAI-compatible endpoint)
-- Watch support for selected workflows (`get --watch`, `events --watch`, `logs --follow`)
-- Configurable kube context selection with current-context fallback
-- Generic `get <resource>` fallback for discoverable Kubernetes resources and CRDs
-- List pods in any Kubernetes namespace
-- List deployments in any Kubernetes namespace
-- List services in any Kubernetes namespace
-- List namespaces, nodes, and events
-- Filter resources with Kubernetes label and field selectors
-- Query resources across all namespaces
-- Limit/paginate list requests with API-native list options
-- Multiple output formats (text, wide, JSON, YAML, name)
-- Configurable timeout for API requests
-- Discovery refresh fallback for stale API mappings
-- Uses standard kubeconfig loading rules (`KUBECONFIG`, merged configs, current context)
-- Support for custom kubeconfig paths
-- Falls back to in-cluster ServiceAccount auth when no kubeconfig is available
-- Supports both exec-based auth flows and legacy auth-provider kubeconfigs when the required auth helper binaries are available in the runtime environment
-- Works with any Kubernetes cluster (local, cloud-managed, on-premises)
+---
 
-## Requirements
+## What makes Valley different
 
-- Go 1.26+
-- Access to a Kubernetes cluster
-- Valid kubeconfig configuration
+| `kubectl` | Valley |
+|---|---|
+| `get pods` shows raw phase strings | `get pods` shows `Healthy (3d)`, `Failing (Restarted 45x)`, `Failing (ImagePull)` |
+| `describe pod` dumps every event including noisy Normal ones | `describe` hides Normal events by default, surfaces only Warnings |
+| You manually run `get`, `describe`, `logs`, `events` to piece together an incident | `valley investigate` traverses the graph automatically and gives you a single correlated analysis |
+| `kubectl` has no AI | `valley ai` runs a ReAct loop — autonomously calls read-only tools until it can answer your question |
+
+---
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `get` | List resources with semantic health statuses and natural language aliases |
+| `describe` | Describe resources with smart event filtering (Warning-only by default) |
+| `logs` | Stream pod or deployment logs |
+| `events` | Show Kubernetes events |
+| `top` | Cluster health summary |
+| `explain` | Deterministic plain-language resource summary; add `--analyse` for AI analysis |
+| `investigate` | Correlated AI root-cause analysis of a Deployment |
+| `ai` | Ask any question — the ReAct agent queries your cluster autonomously to answer it |
+
+---
 
 ## Installation
 
-### Build from Source
+```bash
+go install github.com/profemzy/valley/cmd/valley@latest
+```
+
+Or build from source:
 
 ```bash
-# Clone the repository
+git clone https://github.com/profemzy/valley.git
 cd valley
-
-# Download dependencies
-go mod tidy
-
-# Build the binary
-go build -o valley ./cmd/valley
+go install ./cmd/valley
 ```
 
-### Run Directly
+---
 
-```bash
-go run ./cmd/valley get pods -n <your-namespace>
-```
+## AI Configuration
 
-## Usage
-
-### Basic Usage
-
-```bash
-# List pods in the current kubeconfig namespace (or "default" if unset)
-./valley get pods
-
-# List pods in a specific namespace
-./valley get pods -n kube-system
-
-# List deployments in a specific namespace
-./valley get deployments -n kube-system
-
-# List a generic resource through discovery
-./valley get configmaps -n kube-system
-```
-
-### Phase 2 Commands
-
-```bash
-# Describe a resource
-./valley describe deployment oluto-backend -n oluto
-
-# Stream logs from a pod or deployment
-./valley logs pod/oluto-backend-6759fc54bd-6hmxc -n oluto --tail 100
-./valley logs deployment/oluto-backend -n oluto --tail 50
-
-# Show events (optionally filtered by target)
-./valley events -n oluto
-./valley events deployment/oluto-backend -n oluto
-
-# Cluster health summary
-./valley top -n oluto
-./valley top -A -o json
-
-# Explain resource state in plain language (read-only AI facade)
-./valley explain deployment/oluto-backend -n oluto
-
-# Ask an AI troubleshooting question
-./valley ai "Why is my deployment not available?" -n oluto
-```
-
-### AI Configuration (`.env`)
-
-Valley reads `.env` at startup (without overriding already-exported env vars).
+Valley uses an OpenAI-compatible API. Set credentials via environment or a `.env` file:
 
 ```bash
 cp .env.example .env
@@ -106,329 +58,188 @@ cp .env.example .env
 
 ```dotenv
 VALLEY_AI_BASE_URL=https://api.fuelix.ai/v1
-VALLEY_AI_API_KEY=YOUR_SECRET_TOKEN
+VALLEY_AI_API_KEY=your_key_here
 VALLEY_AI_MODEL=claude-sonnet-4-6
 VALLEY_AI_TIMEOUT=30
 ```
 
-### Current Resource Support
+---
 
-- Typed handlers with resource-specific output: `pods`, `deployments`, `services`, `namespaces`, `nodes`, `events`
-- Generic discovery fallback: any discoverable Kubernetes resource or CRD, for example `configmaps`, `secrets`, `ingresses`, or `httproutes`
-- Generic fallback supports `text`, `wide`, `json`, `yaml`, and `name` output
+## Feature Highlights
 
-### `get` Command Flags
+### Semantic Pod Statuses
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-namespace`, `-n` | Kubernetes namespace to query | Current kubeconfig namespace, or `default` |
-| `-all-namespaces`, `-A` | Query resources across all namespaces | `false` |
-| `-watch`, `-w` | Watch for changes after listing resources (text output) | `false` |
-| `-selector`, `-l` | Label selector used to filter resources | None |
-| `-field-selector` | Field selector used to filter resources | None |
-| `-limit` | Maximum number of resources to return | `0` (no limit) |
-| `-continue` | Pagination continue token from previous list response | None |
-| `-context` | Kubeconfig context to use | Current kubeconfig context |
-| `-kubeconfig` | Path to kubeconfig file | Standard kubeconfig loading rules |
-| `-output`, `-o` | Output format (`text`, `wide`, `json`, `yaml`, `name`) | `text` |
-| `-timeout` | Timeout for API requests | `15s` |
+`valley get pods` replaces raw Kubernetes phase strings with human-readable health summaries:
 
-### Examples
+```
+Pods: 17
+NAME                                                    STATUS
+alpha/backend-alpha-web-6c67fd75b5-lfv2f                Healthy (7h)
+alpha/signup-wizard-be-alpha-sidekiq-545c95cd6d-n65hx   Failing (ImagePull)
+sentry/sentry-non-prod-worker-56d5b9bddd-gggq6          Failing (Restarted 514x)
+sentry/sentry-non-prod-ingest-monitors-6cfdd85bc7-2mkcf Failing (Restarted 1157x)
+```
 
-#### List pods in text format (default)
+### Natural Language Aliases
 
 ```bash
-./valley get pods -n oluto -o text
+valley get failing pods                          # all failing pods, all namespaces
+valley get failing pods -n backend               # scoped to a namespace
+valley get pending pods -n staging
+valley get warning events -n production
+valley get warning events across all namespaces
 ```
 
-**Output:**
-```
-Pods: 5
-  oluto/keycloak-669bcc96c6-67hqb
-  oluto/oluto-agent-6749c759d4-mdtgt
-  oluto/oluto-backend-6759fc54bd-6hmxc
-  oluto/oluto-frontend-67c4f47599-4tf8s
-  oluto/redis-64fdd6b6cd-fgh9q
-```
+### Smart Describe Filtering
 
-#### List pods in JSON format
+`describe` hides noisy Normal events by default and only surfaces Warnings:
 
 ```bash
-./valley get pods -n oluto -o json
+valley describe pod api-7d9f77b4c5-8kmbz -n backend
+# Events:
+#   [Warning] BackOff  3m (x812)
+#     Back-off restarting failed container
+#
+#   (4 Normal event(s) hidden, use --verbose to show all)
+
+valley describe pod api-7d9f77b4c5-8kmbz -n backend --verbose  # show everything
 ```
 
-**Output:**
-```json
-[
-  {
-    "namespace": "oluto",
-    "name": "keycloak-669bcc96c6-67hqb",
-    "phase": "Running",
-    "ip": "10.0.1.15"
-  },
-  {
-    "namespace": "oluto",
-    "name": "oluto-agent-6749c759d4-mdtgt",
-    "phase": "Running",
-    "ip": "10.0.1.16"
-  }
-]
-```
-
-#### Use a custom kubeconfig
+### AI Pod Analysis
 
 ```bash
-./valley get pods -kubeconfig /path/to/custom/kubeconfig -n production
+valley explain pod/api-7d9f77b4c5-8kmbz -n backend --analyse
+valley explain pod/api-7d9f77b4c5-8kmbz -n backend --analyse --include-logs
 ```
 
-#### Filter pods by label
+The AI receives the full pod spec (resource limits, probes, security context, container states), events, and optionally logs — then returns root-cause analysis and misconfiguration flags.
+
+### Correlated Deployment Investigation
 
 ```bash
-./valley get pods -n production -l app=api
+valley investigate signup-wizard-be-alpha-web -n alpha --include-logs
 ```
 
-#### Filter pods by field selector
+Valley automatically:
+1. Fetches the Deployment status and active ReplicaSet
+2. Finds all failing pods
+3. Fetches tail logs from crashing containers
+4. Checks if the Service has matching endpoints
+5. Feeds everything to the AI for a unified root-cause analysis, blast radius assessment, and ordered remediation steps
+
+**Example output:**
+```
+Target:  deployment/alpha/signup-wizard-be-alpha-web
+Context: gke_project_region_cluster
+------------------------------------------------------------
+Root Cause: Image Pull Failure — Tag Does Not Exist or Access Denied
+
+Image: ...chr-signup-wizard-be-ondemand:704aa3e
+
+Blast Radius:
+- Deployment has 0 ready replicas
+- Service has no ready endpoints — traffic cannot reach the app
+- DB migration job is also stuck, schema has not run
+
+Investigation Steps:
+1. Verify the image tag exists in Artifact Registry
+2. Check CI/CD pipeline for commit 704aa3e
+...
+```
+
+### ReAct AI Agent
+
+`valley ai` runs a ReAct (Reason + Act) loop. The agent autonomously calls read-only cluster tools — one at a time, printing each step — until it has enough information to answer your question:
 
 ```bash
-./valley get pods -n production --field-selector status.phase=Running
+valley ai "What is the biggest problem in the sentry namespace?" -n sentry
 ```
 
-#### Query across all namespaces
+```
+Valley AI (ReAct mode) — thinking...
 
-```bash
-./valley get pods -A -o wide
+> calling summarize_health({"namespace": "sentry"})
+> calling list_events({"namespace": "sentry", "limit": 20})
+> calling get_pod_spec({"name": "sentry-non-prod-sentry-redis-master-0", "namespace": "sentry"})
+> calling investigate_deployment({"name": "sentry-non-prod-ingest-monitors", ...})
+> calling get_logs({"pod_name": "sentry-non-prod-sentry-redis-master-0", ...})
+
+------------------------------------------------------------
+Biggest Problem: Redis Master in CrashLoopBackOff — Taking Down 5 Deployments
+
+Root Cause: Redis has a 4.7 GB RDB snapshot to load on startup (~61 seconds).
+During this window the liveness probe fails and Kubernetes kills the container
+before it finishes loading — creating a restart death spiral.
+
+Blast Radius: 5 deployments at 0/1 ready. All Sentry background jobs stalled.
+
+Fix: Extend liveness probe initialDelaySeconds to 120–180s on the Redis StatefulSet.
 ```
 
-#### Watch resource changes
+Available tools the agent can call:
+- `summarize_health` — cluster/namespace health snapshot
+- `list_namespaces` — list available namespaces
+- `describe_resource` — describe any resource
+- `list_events` — fetch events for a resource or namespace
+- `get_pod_spec` — full pod diagnostic spec (limits, probes, security context)
+- `get_logs` — tail logs from a pod container
+- `investigate_deployment` — full correlated Deployment investigation
 
-```bash
-./valley get pods -n production --watch
-./valley events -n production --watch
-```
+---
 
-#### Limit results and continue pagination
+## Requirements
 
-```bash
-./valley get pods -n production --limit 50
-./valley get pods -n production --limit 50 --continue <next-token>
-```
+- Go 1.23+
+- Access to a Kubernetes cluster
+- Valid kubeconfig configuration
+- `VALLEY_AI_API_KEY` for AI commands (`ai`, `investigate`, `explain --analyse`)
 
-#### Use a specific kube context
-
-```bash
-./valley get pods --context production -n backend
-```
-
-#### Use standard kubeconfig loading
-
-```bash
-KUBECONFIG=~/.kube/config:~/.kube/staging ./valley get pods
-```
-
-#### Run inside Kubernetes
-
-If no kubeconfig is mounted, Valley falls back to in-cluster authentication and uses the pod namespace from `POD_NAMESPACE`, the mounted ServiceAccount namespace file, or `default`.
-
-#### Set a custom timeout
-
-```bash
-./valley get pods -n kube-system -timeout 30s
-```
-
-#### Pipe JSON output to jq
-
-```bash
-./valley get pods -n oluto -o json | jq '.[] | select(.phase == "Running")'
-```
-
-#### List deployments in text format
-
-```bash
-./valley get deployments -n oluto
-```
-
-**Output:**
-```
-Deployments: 2
-  oluto/api ready=3/3 updated=3 available=3
-  oluto/web ready=2/2 updated=2 available=2
-```
-
-#### List a generic resource or CRD
-
-```bash
-./valley get configmaps -n oluto
-./valley get httproutes -n oluto
-```
-
-**Generic text output example:**
-```
-KIND       NAMESPACE  NAME        AGE
-configmap  oluto      app-config  2d
-```
-
-## Docker
-
-### Build the image
-
-```bash
-docker build -t valley .
-```
-
-The Dockerfile builds the binary for the target platform selected by Docker (`--platform`), using the local Docker default when not explicitly set.
-
-### Run with a mounted kubeconfig
-
-```bash
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp \
-  -v ~/.kube:/tmp/.kube:ro \
-  valley get pods -kubeconfig /tmp/.kube/config -n kube-system
-```
-
-If you run Valley in a container with a mounted kubeconfig, any exec-based auth plugin referenced by that kubeconfig must also be available inside the container. The distroless image is a minimal runtime and does not bundle tools such as `kubelogin`, `aws`, or `gcloud`.
-
-If your kubeconfig depends on one of those helpers and it is not present in the container, authentication will fail even though the kubeconfig file is mounted correctly. This commonly affects AKS, EKS, and GKE kubeconfigs that rely on external login commands.
+---
 
 ## Project Structure
 
 ```
 valley/
-├── .env.example
-├── cmd/
-│   └── valley/
-│       ├── ai.go             # `ai` command
-│       ├── describe.go       # `describe` command
-│       ├── explain.go        # `explain` command
-│       ├── events.go         # `events` command
-│       ├── get.go            # `get` subcommand wiring and shared flags
-│       ├── logs.go           # `logs` command
-│       ├── main.go           # CLI bootstrap
-│       ├── root.go           # Root command dispatch
-│       └── top.go            # `top` command
-├── docs/
-│   └── roadmap.md            # Planned feature and architecture roadmap
+├── cmd/valley/
+│   ├── ai.go             # valley ai — ReAct agent
+│   ├── describe.go       # valley describe — smart event filtering
+│   ├── explain.go        # valley explain — deterministic + AI analysis
+│   ├── get.go            # valley get — semantic statuses + NL aliases
+│   ├── get_aliases.go    # Natural language alias resolver
+│   ├── investigate.go    # valley investigate — correlated Deployment analysis
+│   ├── logs.go           # valley logs
+│   ├── events.go         # valley events
+│   ├── top.go            # valley top
+│   └── root.go           # Command dispatch
 ├── internal/
 │   ├── ai/
-│   │   ├── client.go         # AI client abstraction
-│   │   ├── orchestrator.go   # Read-only AI orchestration
-│   │   ├── sessions.go       # Session tracking
-│   │   ├── prompts/          # Versioned prompt files
-│   │   └── tools/            # Read-only internal tool facade
-│   ├── kube/
-│   │   └── client.go         # Runtime initialization, discovery, and kubeconfig resolution
-│   └── resources/
-│       ├── common/
-│       │   ├── output.go     # Shared JSON/YAML formatting helpers
-│       │   ├── query.go      # Shared query options for resource handlers
-│       │   └── registry.go   # Resource registry for verb handlers
-│       ├── deployments/
-│       │   ├── get.go        # `get deployments` handler
-│       │   ├── output.go     # Deployment-specific output formatting
-│       │   └── deployments.go # Deployment-specific query and mapping logic
-│       ├── events/
-│       │   ├── get.go        # `get events` handler
-│       │   ├── output.go     # Event-specific output formatting
-│       │   └── events.go     # Event-specific query and mapping logic
-│       ├── generic/
-│       │   ├── get.go        # Generic discovery-based `get` fallback
-│       │   └── get_test.go   # Generic fallback tests
-│       ├── namespaces/
-│       │   ├── get.go        # `get namespaces` handler
-│       │   ├── output.go     # Namespace-specific output formatting
-│       │   └── namespaces.go # Namespace-specific query and mapping logic
-│       ├── nodes/
-│       │   ├── get.go        # `get nodes` handler
-│       │   ├── output.go     # Node-specific output formatting
-│       │   └── nodes.go      # Node-specific query and mapping logic
-│       ├── pods/
-│       │   ├── get.go        # `get pods` handler
-│       │   ├── output.go     # Pod-specific output formatting
-│       │   └── pods.go       # Pod-specific query and mapping logic
-│       └── services/
-│           ├── get.go        # `get services` handler
-│           ├── output.go     # Service-specific output formatting
-│           └── services.go   # Service-specific query and mapping logic
-├── go.mod
-├── go.sum
-└── README.md
+│   │   ├── client.go         # OpenAI-compatible client + multi-turn tool calling
+│   │   ├── orchestrator.go   # Explain, Analyse, Investigate, Ask methods
+│   │   ├── react.go          # ReAct loop + tool registry + tool execution
+│   │   └── tools/
+│   │       ├── contracts.go  # Reader interface + all data types
+│   │       └── kube_reader.go # All Kubernetes read operations
+│   ├── kube/                 # Runtime init, discovery, kubeconfig resolution
+│   └── resources/            # Typed handlers (pods, deployments, services, etc.)
+├── docs/roadmap.md
+└── .env.example
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│      cmd/valley/root.go + get.go        │
-│ (verb dispatch, shared flags, routing)  │
-└─────────────────────────────────────────┘
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-┌──────────────┐   ┌──────────────────────┐
-│    kube/     │   │  resources/*         │
-│ runtime/fac. │   │ typed + generic get  │
-└──────────────┘   └──────────────────────┘
-        │                   │
-        ▼                   ▼
-  kubeconfig /        k8s API +
-  context / disco     resource rendering
-```
-
-## Roadmap
-
-The next planned features and architecture milestones live in [`docs/roadmap.md`](docs/roadmap.md).
+---
 
 ## Development
 
-### Run Tests
-
 ```bash
-go test ./...
-```
-
-### Build
-
-```bash
+go test ./...        # run all tests
 go build ./cmd/valley
+go install ./cmd/valley
 ```
 
-### Clean and Rebuild
+---
 
-```bash
-go clean -modcache -cache
-go mod tidy
-go build ./cmd/valley
-```
+## Roadmap
 
-## Troubleshooting
-
-### `kubelogin not found` Error
-
-If you're connecting to an Azure AKS cluster with AAD authentication, you may need to install `kubelogin`:
-
-```bash
-# macOS
-brew install kubelogin
-
-# Or download from: https://github.com/Azure/kubelogin
-```
-
-### Permission Denied
-
-Ensure your kubeconfig has the correct RBAC permissions to list pods in the target namespace:
-
-```bash
-kubectl auth can-i list pods -n <namespace>
-```
-
-### Connection Timeout
-
-Increase the timeout value for slow networks or large clusters:
-
-```bash
-./valley get pods -timeout 60s
-```
+See [`docs/roadmap.md`](docs/roadmap.md) for the full phase-by-phase plan.
 
 ## License
 

@@ -46,7 +46,7 @@ func runAI(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&output, "o", "text", "Output format (text, json, yaml)")
 	fs.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	fs.StringVar(&kubeCtx, "context", "", "Kubeconfig context to use")
-	fs.DurationVar(&timeout, "timeout", 30*time.Second, "Timeout for API requests")
+	fs.DurationVar(&timeout, "timeout", 120*time.Second, "Timeout for the full ReAct loop")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
@@ -84,11 +84,16 @@ func runAI(args []string, stdout, stderr io.Writer) int {
 		client,
 	)
 
-	response, err := orch.Ask(ctx, ai.AskRequest{
+	// Progress writer — tool calls are printed to stdout in real time so the
+	// user can see what the agent is doing.
+	fmt.Fprintln(stdout, "Valley AI (ReAct mode) — thinking...")
+	fmt.Fprintln(stdout)
+
+	response, err := orch.React(ctx, ai.ReactRequest{
 		Question:      question,
 		Namespace:     namespace,
 		AllNamespaces: allNamespace,
-	})
+	}, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -96,7 +101,7 @@ func runAI(args []string, stdout, stderr io.Writer) int {
 
 	switch output {
 	case "text":
-		if err := printAIText(stdout, response); err != nil {
+		if err := printReactText(stdout, response); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -118,20 +123,11 @@ func runAI(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func printAIText(w io.Writer, response ai.AskResponse) error {
-	if _, err := fmt.Fprintf(w, "AI Answer\nContext: %s\nQuestion: %s\n\n%s\n", response.Context, response.Question, response.Answer); err != nil {
-		return err
-	}
-	if len(response.Observed) > 0 {
-		if _, err := fmt.Fprintln(w, "\nObserved Facts:"); err != nil {
-			return err
-		}
-		for _, line := range response.Observed {
-			if _, err := fmt.Fprintf(w, "  - %s\n", line); err != nil {
-				return err
-			}
-		}
-	}
+func printReactText(w io.Writer, r ai.ReactResponse) error {
+	fmt.Fprintln(w, "\n"+strings.Repeat("-", 60))
+	fmt.Fprintf(w, "Context: %s\n", r.Context)
+	fmt.Fprintf(w, "Question: %s\n\n", r.Question)
+	fmt.Fprintln(w, r.Answer)
 	return nil
 }
 
@@ -139,15 +135,21 @@ func printAIUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  valley ai \"<question>\" [flags]")
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Valley AI uses a ReAct (Reason + Act) loop to autonomously query your")
+	fmt.Fprintln(w, "cluster using read-only tools until it can answer your question.")
+	fmt.Fprintln(w, "Each tool call is printed in real time so you can follow the reasoning.")
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Examples:")
-	fmt.Fprintln(w, "  valley ai \"Why is my deployment not available?\" -n oluto")
-	fmt.Fprintln(w, "  valley ai \"Summarize what is failing\" -A")
+	fmt.Fprintln(w, "  valley ai \"Why is my deployment not available?\" -n backend")
+	fmt.Fprintln(w, "  valley ai \"What is failing in the sentry namespace?\"")
+	fmt.Fprintln(w, "  valley ai \"Summarize all failing pods across the cluster\" -A")
+	fmt.Fprintln(w, "  valley ai \"Why is the signup-wizard-be deployment broken?\" -n alpha")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  -namespace, -n string")
-	fmt.Fprintln(w, "        Kubernetes namespace to query")
+	fmt.Fprintln(w, "        Default namespace for tool calls")
 	fmt.Fprintln(w, "  -all-namespaces, -A")
-	fmt.Fprintln(w, "        Search across all namespaces")
+	fmt.Fprintln(w, "        Hint agent to search across all namespaces")
 	fmt.Fprintln(w, "  -output, -o string")
 	fmt.Fprintln(w, "        Output format (text, json, yaml)")
 	fmt.Fprintln(w, "  -kubeconfig string")
@@ -155,5 +157,5 @@ func printAIUsage(w io.Writer) {
 	fmt.Fprintln(w, "  -context string")
 	fmt.Fprintln(w, "        Kubeconfig context to use")
 	fmt.Fprintln(w, "  -timeout duration")
-	fmt.Fprintln(w, "        Timeout for API requests")
+	fmt.Fprintln(w, "        Timeout for the full ReAct loop (default 120s)")
 }

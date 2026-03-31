@@ -43,6 +43,7 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 		kubeconfig   string
 		kubeCtx      string
 		timeout      time.Duration
+		verbose      bool
 	)
 
 	fs := flag.NewFlagSet("describe", flag.ContinueOnError)
@@ -57,6 +58,8 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	fs.StringVar(&kubeCtx, "context", "", "Kubeconfig context to use")
 	fs.DurationVar(&timeout, "timeout", 20*time.Second, "Timeout for API requests")
+	fs.BoolVar(&verbose, "verbose", false, "Include Normal events in output")
+	fs.BoolVar(&verbose, "v", false, "Include Normal events in output")
 
 	if err := fs.Parse(args[2:]); err != nil {
 		return 2
@@ -84,7 +87,7 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 
 	namespace = resolveNamespaceOrDefault(rt, namespace, allNamespace)
 
-	if err := describeResource(ctx, rt, resourceName, targetName, namespace, allNamespace, output, stdout); err != nil {
+	if err := describeResource(ctx, rt, resourceName, targetName, namespace, allNamespace, output, verbose, stdout); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
@@ -98,6 +101,7 @@ func describeResource(
 	resourceName, targetName, namespace string,
 	allNamespaces bool,
 	output string,
+	verbose bool,
 	w io.Writer,
 ) error {
 	switch strings.ToLower(resourceName) {
@@ -106,25 +110,29 @@ func describeResource(
 		if err != nil {
 			return err
 		}
-		return printPodDescribe(w, pod, output)
+		events, _ := fetchRelatedEvents(ctx, rt, "Pod", pod.Name, pod.Namespace)
+		return printPodDescribe(w, pod, events, output, verbose)
 	case "deployments", "deployment", "deploy":
 		deployment, err := getDeployment(ctx, rt, namespace, allNamespaces, targetName)
 		if err != nil {
 			return err
 		}
-		return printDeploymentDescribe(w, deployment, output)
+		events, _ := fetchRelatedEvents(ctx, rt, "Deployment", deployment.Name, deployment.Namespace)
+		return printDeploymentDescribe(w, deployment, events, output, verbose)
 	case "services", "service", "svc":
 		service, err := getService(ctx, rt, namespace, allNamespaces, targetName)
 		if err != nil {
 			return err
 		}
-		return printServiceDescribe(w, service, output)
+		events, _ := fetchRelatedEvents(ctx, rt, "Service", service.Name, service.Namespace)
+		return printServiceDescribe(w, service, events, output, verbose)
 	case "nodes", "node", "no":
 		node, err := rt.Typed.CoreV1().Nodes().Get(ctx, targetName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		return printNodeDescribe(w, node, output)
+		events, _ := fetchRelatedEvents(ctx, rt, "Node", node.Name, "")
+		return printNodeDescribe(w, node, events, output, verbose)
 	case "namespaces", "namespace", "ns":
 		ns, err := rt.Typed.CoreV1().Namespaces().Get(ctx, targetName, metav1.GetOptions{})
 		if err != nil {
@@ -140,6 +148,104 @@ func describeResource(
 	default:
 		return describeGeneric(ctx, rt, resourceName, targetName, namespace, allNamespaces, output, w)
 	}
+}
+
+// fetchRelatedEvents retrieves events for a specific resource object.
+// For cluster-scoped resources (e.g. Nodes), pass an empty namespace.
+func fetchRelatedEvents(ctx context.Context, rt *kube.Runtime, kind, name, namespace string) ([]corev1.Event, error) {
+	ns := namespace
+	if ns == "" {
+		ns = metav1.NamespaceAll
+	}
+	fieldSelector := fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s", kind, name)
+	list, err := rt.Typed.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
+		FieldSelector: fieldSelector,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Sort by most recent last
+	sort.Slice(list.Items, func(i, j int) bool {
+		ti := list.Items[i].LastTimestamp.Time
+		tj := list.Items[j].LastTimestamp.Time
+		return ti.Before(tj)
+	})
+	return list.Items, nil
+}
+
+// filterWarningEvents returns only non-Normal events from the list.
+func filterWarningEvents(events []corev1.Event) []corev1.Event {
+	filtered := make([]corev1.Event, 0, len(events))
+	for _, e := range events {
+		if e.Type != corev1.EventTypeNormal {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// printEvents renders an events section into w. When verbose is false only
+// Warning-class events are shown. A summary hint is printed when events are
+// hidden so the user knows to pass --verbose.
+func printEvents(w io.Writer, events []corev1.Event, verbose bool) {
+	displayed := events
+	hiddenCount := 0
+	if !verbose {
+		warnings := filterWarningEvents(events)
+		hiddenCount = len(events) - len(warnings)
+		displayed = warnings
+	}
+
+	fmt.Fprintln(w, "\nEvents:")
+	if len(displayed) == 0 {
+		if hiddenCount > 0 {
+			fmt.Fprintf(w, "  (none — %d Normal event(s) hidden, use --verbose to show)\n", hiddenCount)
+		} else {
+			fmt.Fprintln(w, "  (none)")
+		}
+		return
+	}
+
+	for _, e := range displayed {
+		age := formatEventAge(e)
+		fmt.Fprintf(w, "  [%s] %s  %s (x%d)\n", e.Type, e.Reason, age, max32(e.Count, 1))
+		fmt.Fprintf(w, "    %s\n", e.Message)
+	}
+
+	if hiddenCount > 0 {
+		fmt.Fprintf(w, "\n  (%d Normal event(s) hidden, use --verbose to show all)\n", hiddenCount)
+	}
+}
+
+func formatEventAge(e corev1.Event) string {
+	t := e.LastTimestamp.Time
+	if t.IsZero() {
+		t = e.EventTime.Time
+	}
+	if t.IsZero() {
+		return "unknown"
+	}
+	d := time.Since(t)
+	if d < 0 {
+		return "0s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+func max32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func describeGeneric(
@@ -312,7 +418,7 @@ func singleOrAmbiguous[T any](kind, name string, items []T, namespaceFn func(T) 
 	return &items[0], nil
 }
 
-func printPodDescribe(w io.Writer, pod *corev1.Pod, output string) error {
+func printPodDescribe(w io.Writer, pod *corev1.Pod, events []corev1.Event, output string, verbose bool) error {
 	switch output {
 	case "json", "yaml":
 		return printKubernetesObject(w, pod, output)
@@ -327,13 +433,17 @@ func printPodDescribe(w io.Writer, pod *corev1.Pod, output string) error {
 			firstNonEmpty(pod.Status.PodIP, "-"),
 			len(pod.Spec.Containers),
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		printEvents(w, events, verbose)
+		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", output)
 	}
 }
 
-func printDeploymentDescribe(w io.Writer, deployment *appsv1.Deployment, output string) error {
+func printDeploymentDescribe(w io.Writer, deployment *appsv1.Deployment, events []corev1.Event, output string, verbose bool) error {
 	switch output {
 	case "json", "yaml":
 		return printKubernetesObject(w, deployment, output)
@@ -352,13 +462,17 @@ func printDeploymentDescribe(w io.Writer, deployment *appsv1.Deployment, output 
 			deployment.Status.UpdatedReplicas,
 			deployment.Status.AvailableReplicas,
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		printEvents(w, events, verbose)
+		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", output)
 	}
 }
 
-func printServiceDescribe(w io.Writer, service *corev1.Service, output string) error {
+func printServiceDescribe(w io.Writer, service *corev1.Service, events []corev1.Event, output string, verbose bool) error {
 	switch output {
 	case "json", "yaml":
 		return printKubernetesObject(w, service, output)
@@ -376,13 +490,17 @@ func printServiceDescribe(w io.Writer, service *corev1.Service, output string) e
 			firstNonEmpty(service.Spec.ClusterIP, "-"),
 			strings.Join(portNames, ", "),
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		printEvents(w, events, verbose)
+		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", output)
 	}
 }
 
-func printNodeDescribe(w io.Writer, node *corev1.Node, output string) error {
+func printNodeDescribe(w io.Writer, node *corev1.Node, events []corev1.Event, output string, verbose bool) error {
 	switch output {
 	case "json", "yaml":
 		return printKubernetesObject(w, node, output)
@@ -401,7 +519,11 @@ func printNodeDescribe(w io.Writer, node *corev1.Node, output string) error {
 			ready,
 			node.Status.NodeInfo.KubeletVersion,
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		printEvents(w, events, verbose)
+		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", output)
 	}
@@ -468,6 +590,7 @@ func printDescribeUsage(w io.Writer) {
 	fmt.Fprintln(w, "  valley describe deployment api -n backend")
 	fmt.Fprintln(w, "  valley describe service api -n backend -o yaml")
 	fmt.Fprintln(w, "  valley describe pod api-7d9f77b4c5-8kmbz -A")
+	fmt.Fprintln(w, "  valley describe pod api-7d9f77b4c5-8kmbz -n backend --verbose")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  -namespace, -n string")
@@ -476,6 +599,8 @@ func printDescribeUsage(w io.Writer) {
 	fmt.Fprintln(w, "        Search across all namespaces")
 	fmt.Fprintln(w, "  -output, -o string")
 	fmt.Fprintln(w, "        Output format (text, json, yaml)")
+	fmt.Fprintln(w, "  -verbose, -v")
+	fmt.Fprintln(w, "        Include Normal events in output (Warning-only by default)")
 	fmt.Fprintln(w, "  -kubeconfig string")
 	fmt.Fprintln(w, "        Path to kubeconfig file")
 	fmt.Fprintln(w, "  -context string")

@@ -1,13 +1,14 @@
 package common
 
 type QueryOptions struct {
-	Namespace     string
-	LabelSelector string
-	FieldSelector string
-	AllNamespaces bool
-	Watch         bool
-	Limit         int64
-	Continue      string
-	Wide          bool
-	Output        string
+	Namespace      string
+	LabelSelector  string
+	FieldSelector  string
+	AllNamespaces  bool
+	Watch          bool
+	Limit          int64
+	Continue       string
+	Wide           bool
+	Output         string
+	SemanticFilter string // e.g. "failing", "pending", "running" — applied in-memory after listing
 }

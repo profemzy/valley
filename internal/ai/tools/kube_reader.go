@@ -414,6 +414,307 @@ func toObjectKind(resource string) string {
 	}
 }
 
+func (k *KubeReader) GetPodSpec(ctx context.Context, ref ResourceRef) (PodSpec, error) {
+	pod, err := k.getPod(ctx, ref)
+	if err != nil {
+		return PodSpec{}, err
+	}
+
+	var totalRestarts int32
+	containerState := ""
+	for _, cs := range pod.Status.ContainerStatuses {
+		totalRestarts += cs.RestartCount
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			containerState = cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" && containerState == "" {
+			containerState = cs.State.Terminated.Reason
+		}
+	}
+
+	containers := mapContainerSpecs(pod.Spec.Containers, pod.Status.ContainerStatuses)
+	initContainers := mapContainerSpecs(pod.Spec.InitContainers, pod.Status.InitContainerStatuses)
+
+	return PodSpec{
+		Namespace:      pod.Namespace,
+		Name:           pod.Name,
+		Phase:          string(pod.Status.Phase),
+		NodeName:       pod.Spec.NodeName,
+		Containers:     containers,
+		InitContainers: initContainers,
+		Restarts:       totalRestarts,
+		ContainerState: containerState,
+	}, nil
+}
+
+func mapContainerSpecs(containers []corev1.Container, statuses []corev1.ContainerStatus) []ContainerSpec {
+	statusByName := map[string]corev1.ContainerStatus{}
+	for _, cs := range statuses {
+		statusByName[cs.Name] = cs
+	}
+
+	specs := make([]ContainerSpec, 0, len(containers))
+	for _, c := range containers {
+		cs := ContainerSpec{
+			Name:           c.Name,
+			Image:          c.Image,
+			LivenessProbe:  c.LivenessProbe != nil,
+			ReadinessProbe: c.ReadinessProbe != nil,
+		}
+
+		// Resource requests/limits
+		if c.Resources.Requests != nil {
+			if cpu := c.Resources.Requests.Cpu(); cpu != nil {
+				cs.RequestsCPU = cpu.String()
+			}
+			if mem := c.Resources.Requests.Memory(); mem != nil {
+				cs.RequestsMemory = mem.String()
+			}
+		}
+		if c.Resources.Limits != nil {
+			if cpu := c.Resources.Limits.Cpu(); cpu != nil {
+				cs.LimitsCPU = cpu.String()
+			}
+			if mem := c.Resources.Limits.Memory(); mem != nil {
+				cs.LimitsMemory = mem.String()
+			}
+		}
+
+		// Security context
+		if c.SecurityContext != nil {
+			cs.RunAsNonRoot = c.SecurityContext.RunAsNonRoot
+			if c.SecurityContext.Privileged != nil {
+				cs.Privileged = *c.SecurityContext.Privileged
+			}
+		}
+
+		// Container state from status
+		if status, ok := statusByName[c.Name]; ok {
+			cs.RestartCount = status.RestartCount
+			if status.State.Waiting != nil {
+				cs.State = status.State.Waiting.Reason
+			} else if status.State.Terminated != nil {
+				cs.State = status.State.Terminated.Reason
+			} else if status.State.Running != nil {
+				cs.State = "Running"
+			}
+		}
+
+		specs = append(specs, cs)
+	}
+	return specs
+}
+
+func (k *KubeReader) InvestigateDeployment(ctx context.Context, ref InvestigateRef) (DeploymentSnapshot, error) {
+	ns := strings.TrimSpace(ref.Namespace)
+	if ns == "" {
+		ns = k.Runtime.EffectiveNamespace
+	}
+
+	// ── Step 1: Fetch Deployment ────────────────────────────────────────────
+	deploy, err := k.Runtime.Typed.AppsV1().Deployments(ns).Get(ctx, ref.Name, metav1.GetOptions{})
+	if err != nil {
+		return DeploymentSnapshot{}, fmt.Errorf("deployment %q not found in namespace %q: %w", ref.Name, ns, err)
+	}
+
+	desired := int32(1)
+	if deploy.Spec.Replicas != nil {
+		desired = *deploy.Spec.Replicas
+	}
+
+	snap := DeploymentSnapshot{
+		Namespace:         ns,
+		DeploymentName:    deploy.Name,
+		DesiredReplicas:   desired,
+		ReadyReplicas:     deploy.Status.ReadyReplicas,
+		AvailableReplicas: deploy.Status.AvailableReplicas,
+		UpdatedReplicas:   deploy.Status.UpdatedReplicas,
+	}
+
+	// ── Step 2: Deployment events ────────────────────────────────────────────
+	deployEvents, _ := k.ListEvents(ctx, ResourceRef{
+		Resource:  "deployment",
+		Name:      deploy.Name,
+		Namespace: ns,
+	}, 15)
+	snap.DeploymentEvents = deployEvents
+
+	// ── Step 3: Find the active ReplicaSet ───────────────────────────────────
+	labelSel := ""
+	if deploy.Spec.Selector != nil {
+		parts := make([]string, 0, len(deploy.Spec.Selector.MatchLabels))
+		for k, v := range deploy.Spec.Selector.MatchLabels {
+			parts = append(parts, k+"="+v)
+		}
+		sort.Strings(parts)
+		labelSel = strings.Join(parts, ",")
+	}
+
+	rsList, err := k.Runtime.Typed.AppsV1().ReplicaSets(ns).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSel,
+	})
+	if err == nil {
+		// Find the RS owned by this Deployment with the highest revision
+		bestRevision := ""
+		for i := range rsList.Items {
+			rs := &rsList.Items[i]
+			// Must be owned by this Deployment
+			owned := false
+			for _, ref := range rs.OwnerReferences {
+				if ref.Kind == "Deployment" && ref.Name == deploy.Name {
+					owned = true
+					break
+				}
+			}
+			if !owned {
+				continue
+			}
+			rev := rs.Annotations["deployment.kubernetes.io/revision"]
+			if rev > bestRevision {
+				bestRevision = rev
+				snap.ActiveReplicaSet = rs.Name
+				snap.Revision = rev
+			}
+		}
+	}
+
+	// ── Step 4: Find failing pods ─────────────────────────────────────────────
+	podList, err := k.Runtime.Typed.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSel,
+	})
+	if err != nil {
+		return snap, fmt.Errorf("failed to list pods for deployment %q: %w", ref.Name, err)
+	}
+
+	tail := ref.LogTailLines
+	if tail <= 0 {
+		tail = 50
+	}
+
+	for _, pod := range podList.Items {
+		info := mapPodInfo(pod)
+		if !isFailing(info) {
+			continue
+		}
+
+		fp := FailingPodInfo{
+			Name:           pod.Name,
+			Phase:          info.Phase,
+			ContainerState: info.ContainerState,
+			Restarts:       info.Restarts,
+		}
+
+		// Pod events
+		podEvents, _ := k.ListEvents(ctx, ResourceRef{
+			Resource:  "pod",
+			Name:      pod.Name,
+			Namespace: ns,
+		}, 10)
+		fp.Events = podEvents
+
+		// Optional logs
+		if ref.IncludeLogs {
+			logs, logsErr := k.GetLogs(ctx, LogsRef{
+				Namespace: ns,
+				PodName:   pod.Name,
+				TailLines: tail,
+			})
+			if logsErr == nil {
+				fp.Logs = logs
+			}
+		}
+
+		snap.FailingPods = append(snap.FailingPods, fp)
+	}
+
+	// ── Step 5: Find matching Service and check endpoints ─────────────────────
+	svcList, err := k.Runtime.Typed.CoreV1().Services(ns).List(ctx, metav1.ListOptions{})
+	if err == nil {
+		for _, svc := range svcList.Items {
+			if svcSelectorsMatch(svc.Spec.Selector, deploy.Spec.Selector.MatchLabels) {
+				snap.ServiceName = svc.Name
+
+				selParts := make([]string, 0, len(svc.Spec.Selector))
+				for k, v := range svc.Spec.Selector {
+					selParts = append(selParts, k+"="+v)
+				}
+				sort.Strings(selParts)
+				snap.ServiceSelector = strings.Join(selParts, ",")
+
+				ep, epErr := k.Runtime.Typed.CoreV1().Endpoints(ns).Get(ctx, svc.Name, metav1.GetOptions{})
+				if epErr == nil {
+					for _, subset := range ep.Subsets {
+						snap.EndpointCount += len(subset.Addresses)
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return snap, nil
+}
+
+// mapPodInfo is a lightweight version of pods.mapInfo for use within the tools layer.
+func mapPodInfo(pod corev1.Pod) struct {
+	Phase          string
+	ContainerState string
+	Restarts       int32
+} {
+	var restarts int32
+	containerState := ""
+	for _, cs := range pod.Status.ContainerStatuses {
+		restarts += cs.RestartCount
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			containerState = cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" && containerState == "" {
+			containerState = cs.State.Terminated.Reason
+		}
+	}
+	return struct {
+		Phase          string
+		ContainerState string
+		Restarts       int32
+	}{
+		Phase:          string(pod.Status.Phase),
+		ContainerState: containerState,
+		Restarts:       restarts,
+	}
+}
+
+// isFailing returns true if the pod info indicates a non-healthy state.
+func isFailing(info struct {
+	Phase          string
+	ContainerState string
+	Restarts       int32
+}) bool {
+	if info.Phase == string(corev1.PodFailed) {
+		return true
+	}
+	switch info.ContainerState {
+	case "CrashLoopBackOff", "OOMKilled", "ImagePullBackOff", "ErrImagePull",
+		"Error", "ContainerCannotRun", "CreateContainerConfigError", "InvalidImageName",
+		"Init:CrashLoopBackOff", "Init:Error":
+		return true
+	}
+	return false
+}
+
+// svcSelectorsMatch returns true if the service selector is a subset of the
+// deployment's match labels (i.e. the service targets this deployment's pods).
+func svcSelectorsMatch(svcSelector, deployLabels map[string]string) bool {
+	if len(svcSelector) == 0 {
+		return false
+	}
+	for k, v := range svcSelector {
+		if deployLabels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
